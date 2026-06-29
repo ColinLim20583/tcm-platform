@@ -11,6 +11,7 @@ from datetime import datetime
 import database as db
 from formulation_engine import generate_formulation, generate_business_case, enrich_evidence
 from inventory_data import get_all_herbs, filter_herbs_by_condition
+from safety_checker import check_formula_safety
 from config import APP_TITLE, APP_SUBTITLE, VERSION, COMPANY
 
 # ─── PAGE CONFIG ─────────────────────────────────────────────────────────────
@@ -104,6 +105,31 @@ st.markdown("""
   /* Divider */
   hr { border-color: #2d4a6a !important; margin: 16px 0; }
 
+  /* Safety Report */
+  .safety-banner { border-radius: 10px; padding: 18px 22px; margin: 16px 0; }
+  .safety-banner.green  { background: #0d2b1a; border: 2px solid #22c55e; }
+  .safety-banner.amber  { background: #2a1f0e; border: 2px solid #f59e0b; }
+  .safety-banner.red    { background: #2a0e0e; border: 2px solid #ef4444; }
+  .safety-banner .sb-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .safety-banner.green  .sb-title { color: #22c55e; }
+  .safety-banner.amber  .sb-title { color: #f59e0b; }
+  .safety-banner.red    .sb-title { color: #ef4444; }
+  .safety-banner .sb-summary { font-size: 14px; color: #c9d8e8; line-height: 1.5; }
+  .safety-score-ring { display:inline-block; background:#1a3a5c; border-radius:50%;
+    width:64px; height:64px; line-height:64px; text-align:center;
+    font-size:22px; font-weight:800; color:#7ec8e3; margin-right:16px; float:left; }
+  .flag-card { border-radius: 8px; padding: 12px 16px; margin: 8px 0; }
+  .flag-card.RED   { background: #2a0e0e; border-left: 4px solid #ef4444; }
+  .flag-card.AMBER { background: #2a1f0e; border-left: 4px solid #f59e0b; }
+  .flag-card.INFO  { background: #1a2535; border-left: 4px solid #38bdf8; }
+  .flag-cat  { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+  .flag-card.RED   .flag-cat { color: #ef4444; }
+  .flag-card.AMBER .flag-cat { color: #f59e0b; }
+  .flag-card.INFO  .flag-cat { color: #38bdf8; }
+  .flag-msg  { font-size: 13px; color: #c9d8e8; margin-bottom: 6px; }
+  .flag-action { font-size: 12px; color: #8aa5bf; font-style: italic; }
+  .flag-herbs { font-size: 12px; color: #7ec8e3; margin-bottom: 4px; }
+
   /* Knowledge base table */
   .kb-row {
     background: #162334; border: 1px solid #2d4a6a; border-radius: 8px;
@@ -182,6 +208,80 @@ def role_badge(role):
     cls = role_map.get(role, "shi")
     role_label = {"Jun":"Jun (Chief)","Chen":"Chen (Deputy)","Zuo":"Zuo (Asst.)","Shi":"Shi (Envoy)"}.get(role, role)
     return f'<span class="role-{cls}">{role_label}</span>'
+
+def render_safety_report(result: dict, demographic: str = "", condition: str = ""):
+    """Run and display the safety check for a generated formula."""
+    formula = result.get("formula", [])
+    if not formula:
+        return
+
+    report = check_formula_safety(
+        formula=formula,
+        demographic=demographic,
+        condition=condition,
+        dosage_recommendation=result.get("dosage_recommendation", ""),
+    )
+
+    overall = report.overall
+    score = report.score
+    banner_cls = overall.lower()
+    icon = {"GREEN": "✅", "AMBER": "⚠️", "RED": "🚨"}.get(overall, "")
+    label = {"GREEN": "SAFE TO PROCEED", "AMBER": "REVIEW REQUIRED", "RED": "DO NOT MANUFACTURE — CRITICAL ISSUES"}.get(overall, overall)
+
+    st.markdown(f"""
+    <div class="safety-banner {banner_cls}">
+      <div style="overflow:hidden">
+        <div class="safety-score-ring">{score}</div>
+        <div class="sb-title">{icon} Safety Score: {score}/100 — {label}</div>
+        <div class="sb-summary">{report.summary}</div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    red_flags = [f for f in report.flags if f.level == "RED"]
+    amber_flags = [f for f in report.flags if f.level == "AMBER"]
+    info_flags = [f for f in report.flags if f.level == "INFO"]
+
+    if red_flags:
+        st.markdown("#### 🚨 Critical Issues — Must Resolve Before Manufacturing")
+        for flag in red_flags:
+            herbs_str = " · ".join(flag.herbs_involved)
+            st.markdown(f"""
+            <div class="flag-card RED">
+              <div class="flag-cat">{flag.category}</div>
+              <div class="flag-herbs">Herb(s): {herbs_str}</div>
+              <div class="flag-msg">{flag.message}</div>
+              <div class="flag-action">Action: {flag.action}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    if amber_flags:
+        st.markdown("#### ⚠️ Advisory — Address Before Submission")
+        for flag in amber_flags:
+            herbs_str = " · ".join(flag.herbs_involved)
+            st.markdown(f"""
+            <div class="flag-card AMBER">
+              <div class="flag-cat">{flag.category}</div>
+              <div class="flag-herbs">Herb(s): {herbs_str}</div>
+              <div class="flag-msg">{flag.message}</div>
+              <div class="flag-action">Action: {flag.action}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    if not red_flags and not amber_flags:
+        st.markdown("""
+        <div class="flag-card INFO">
+          <div class="flag-cat">No incompatibilities or restricted substances detected</div>
+          <div class="flag-msg">Standard QC testing and lab certificates still required for all CPM products.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with st.expander("📋 Manufacturer Checklist (required for every batch)"):
+        for note in report.manufacturer_notes:
+            st.markdown(f"- {note}")
+
+    st.caption(f"Safety check run: {datetime.now().strftime('%Y-%m-%d %H:%M')}  ·  Rules: TCM 十八反/十九畏, HSA CPM Guidelines GL-CHPB-4-001 (Jan 2025)")
+
 
 def render_product_card(result: dict, show_business_btn: bool = True):
     commercial = result.get("commercial", {})
@@ -444,6 +544,17 @@ with tab1:
                     st.session_state.result = None
 
     if st.session_state.result:
+        st.divider()
+
+        # ── SAFETY CHECK (always shown first) ────────────────────────────────
+        st.markdown("## 🛡️ Safety Validation")
+        st.markdown("*Checked against: TCM 十八反/十九畏 classical rules · HSA CPM dosage limits · Pregnancy flags · CITES banned species · Herb–drug interactions*")
+        render_safety_report(
+            st.session_state.result,
+            demographic=st.session_state.get("last_demographic", ""),
+            condition=st.session_state.get("last_condition", ""),
+        )
+
         st.divider()
         st.markdown("## 🌿 Generated Formulation")
         render_product_card(st.session_state.result)

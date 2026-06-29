@@ -114,7 +114,7 @@ CRITICAL: All formula percentages must sum to exactly 100. Use only herbs from t
 
     raw = response.content[0].text.strip()
 
-    # Extract JSON robustly
+    # Extract JSON robustly — stops at first complete object (handles trailing text)
     start = raw.find('{')
     if start == -1:
         raise ValueError("No valid JSON found in response")
