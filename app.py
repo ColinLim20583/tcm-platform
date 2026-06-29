@@ -116,6 +116,26 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ─── PASSWORD GATE ────────────────────────────────────────────────────────────
+def check_password():
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+
+    if not st.session_state.authenticated:
+        st.markdown("<h2 style='color:#7ec8e3'>🌿 Chemigran TCM Platform</h2>", unsafe_allow_html=True)
+        pwd = st.text_input("Enter password to access", type="password")
+        if st.button("Login"):
+            correct = st.secrets.get("APP_PASSWORD", "Chemigran#0606")
+            if pwd == correct:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Incorrect password.")
+        st.stop()
+
+check_password()
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ─── INIT ─────────────────────────────────────────────────────────────────────
 db.init_db()
 
