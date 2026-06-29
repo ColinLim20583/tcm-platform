@@ -12,6 +12,7 @@ import database as db
 from formulation_engine import generate_formulation, generate_business_case, enrich_evidence
 from inventory_data import get_all_herbs, filter_herbs_by_condition
 from safety_checker import check_formula_safety
+from label_generator import generate_label
 from config import APP_TITLE, APP_SUBTITLE, VERSION, COMPANY
 
 # ─── PAGE CONFIG ─────────────────────────────────────────────────────────────
@@ -565,6 +566,60 @@ with tab1:
             condition=st.session_state.get("last_condition", ""),
             known_allergies=st.session_state.get("last_allergies", ""),
         )
+
+        st.divider()
+
+        # ── LABEL GENERATOR ──────────────────────────────────────────────────
+        st.markdown("## 🏷️ Label Design")
+        st.markdown("*Premium HSA CPM compliant · Bilingual EN/ZH · Color theme auto-selected · Opens in Adobe Illustrator*")
+        lbl_col1, lbl_col2, lbl_col3, lbl_col4 = st.columns([2, 2, 2, 4])
+        product_slug = st.session_state.result.get("product_name_en", "formula").replace(" ", "_")[:30]
+        with lbl_col1:
+            try:
+                sachet_svg = generate_label(st.session_state.result, "sachet")
+                st.download_button(
+                    "📥 Sachet Label (40×120mm)",
+                    data=sachet_svg,
+                    file_name=f"{product_slug}_sachet_label.svg",
+                    mime="image/svg+xml",
+                    key="lbl_sachet",
+                    help="Granule stick pack label with botanical art. Open in Adobe Illustrator."
+                )
+            except Exception as e:
+                st.error(f"Sachet label error: {e}")
+        with lbl_col2:
+            try:
+                inner_svg = generate_label(st.session_state.result, "inner")
+                st.download_button(
+                    "📥 Inner Label (121×42mm)",
+                    data=inner_svg,
+                    file_name=f"{product_slug}_inner_label.svg",
+                    mime="image/svg+xml",
+                    key="lbl_inner",
+                    help="Two-panel bottle/jar inner label matching Chemigran standard. Open in Adobe Illustrator."
+                )
+            except Exception as e:
+                st.error(f"Inner label error: {e}")
+        with lbl_col3:
+            try:
+                box_svg = generate_label(st.session_state.result, "box")
+                st.download_button(
+                    "📥 Box Front (59×103mm)",
+                    data=box_svg,
+                    file_name=f"{product_slug}_box_label.svg",
+                    mime="image/svg+xml",
+                    key="lbl_box",
+                    help="Retail box front panel with botanical art. Open in Adobe Illustrator."
+                )
+            except Exception as e:
+                st.error(f"Box label error: {e}")
+        with lbl_col4:
+            st.caption(
+                "SVG files open in Adobe Illustrator with correct mm dimensions. "
+                "All text and shapes are fully editable. Replace [BATCH NO.], [EXP DATE] and "
+                "[PENDING REGISTRATION] before printing. Labels include all HSA CPM mandatory fields."
+            )
+        # ─────────────────────────────────────────────────────────────────────
 
         st.divider()
         st.markdown("## 🌿 Generated Formulation")
