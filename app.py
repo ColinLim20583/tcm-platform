@@ -174,6 +174,8 @@ if "generating" not in st.session_state:
     st.session_state.generating = False
 if "business_case" not in st.session_state:
     st.session_state.business_case = ""
+if "last_allergies" not in st.session_state:
+    st.session_state.last_allergies = ""
 
 # ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -209,7 +211,7 @@ def role_badge(role):
     role_label = {"Jun":"Jun (Chief)","Chen":"Chen (Deputy)","Zuo":"Zuo (Asst.)","Shi":"Shi (Envoy)"}.get(role, role)
     return f'<span class="role-{cls}">{role_label}</span>'
 
-def render_safety_report(result: dict, demographic: str = "", condition: str = ""):
+def render_safety_report(result: dict, demographic: str = "", condition: str = "", known_allergies: str = ""):
     """Run and display the safety check for a generated formula."""
     formula = result.get("formula", [])
     if not formula:
@@ -220,6 +222,7 @@ def render_safety_report(result: dict, demographic: str = "", condition: str = "
         demographic=demographic,
         condition=condition,
         dosage_recommendation=result.get("dosage_recommendation", ""),
+        known_allergies=known_allergies,
     )
 
     overall = report.overall
@@ -500,6 +503,12 @@ with tab1:
             placeholder="e.g. 当归 (pregnancy concern), 大黄 (diarrhoea)...",
         )
 
+        known_allergies = st.text_input(
+            "Known Allergies / Sensitivities (optional)",
+            placeholder="e.g. tree nuts, shellfish, honey, ragweed, latex, sulphites, soy...",
+            help="Enter patient or target demographic's known allergies. The safety checker will flag herbs that may cross-react.",
+        )
+
         focus_area = st.multiselect(
             "Focus Areas (helps AI select herbs)",
             ["Sleep", "Stress", "Gut Health", "Women's Wellness", "Healthy Aging",
@@ -524,6 +533,7 @@ with tab1:
         else:
             st.session_state.last_condition = condition
             st.session_state.last_demographic = demographic
+            st.session_state.last_allergies = known_allergies
             st.session_state.business_case = ""
 
             focus_str = ", ".join(focus_area) if focus_area else ""
@@ -553,6 +563,7 @@ with tab1:
             st.session_state.result,
             demographic=st.session_state.get("last_demographic", ""),
             condition=st.session_state.get("last_condition", ""),
+            known_allergies=st.session_state.get("last_allergies", ""),
         )
 
         st.divider()
