@@ -67,18 +67,20 @@ THEMES = {
 
 def _get_theme(fd: dict) -> dict:
     pat = (fd.get("tcm_pattern", "") + " " + " ".join(fd.get("tags", []))).lower()
-    if any(k in pat for k in ["kidney", "renal", "yin defic", "yang defic"]):
-        return THEMES["kidney"]
-    if any(k in pat for k in ["heart", "shen", "sleep", "insomnia", "calm"]):
-        return THEMES["heart"]
-    if any(k in pat for k in ["liver", "qi stagnat", "eye", "detox"]):
+    # Check organ-specific patterns first (liver/heart/spleen/lung/women) before
+    # broad "yin deficiency" so that e.g. "Liver Fire with Yin Deficiency" → liver, not kidney
+    if any(k in pat for k in ["liver", "liver fire", "qi stagnat", "eye", "detox", "gallbladder"]):
         return THEMES["liver"]
-    if any(k in pat for k in ["spleen", "stomach", "digest", "fatigue"]):
+    if any(k in pat for k in ["heart", "shen", "sleep", "insomnia", "calm", "spirit", "palpitat"]):
+        return THEMES["heart"]
+    if any(k in pat for k in ["spleen", "stomach", "digest", "fatigue", "damp", "phlegm-damp"]):
         return THEMES["spleen"]
-    if any(k in pat for k in ["lung", "cough", "respiratory", "breath"]):
+    if any(k in pat for k in ["lung", "cough", "respiratory", "breath", "phlegm-heat"]):
         return THEMES["lung"]
-    if any(k in pat for k in ["women", "menstrual", "period", "female"]):
+    if any(k in pat for k in ["women", "menstrual", "period", "female", "uterus", "breast"]):
         return THEMES["women"]
+    if any(k in pat for k in ["kidney", "renal", "yin defic", "yang defic", "jing", "essence"]):
+        return THEMES["kidney"]
     return THEMES["default"]
 
 
@@ -224,20 +226,26 @@ def generate_inner_svg(fd: dict) -> str:
     t = _get_theme(fd)
     nzh = _e(fd.get("product_name_zh", "中药配方"), 12)
     nen = _e(fd.get("product_name_en", "TCM Formula"), 35)
-    pat = _e(fd.get("tcm_pattern", ""), 45)
-    rat = fd.get("formula_rationale", "Traditionally used for TCM wellness support.")
-    ind = _e(rat, 180)
-    dos = _e(fd.get("dosage_recommendation", "5g twice daily dissolved in warm water"), 140)
-    saf = fd.get("safety", {})
-    con = saf.get("contraindications", [])
-    cs  = _e("; ".join(con[:2]) if con else "Consult physician if pregnant or on medication.")
+    # Short TCM pattern for banner (e.g. "Liver Fire with Yin Deficiency")
+    pat_full = fd.get("tcm_pattern", "")
+    pat  = _e(pat_full, 45)
+    rat  = fd.get("formula_rationale", "Traditionally used for TCM wellness support.")
+    ind  = _e(rat, 130)
+    dos  = _e(fd.get("dosage_recommendation", "5g twice daily dissolved in warm water"), 120)
+    saf  = fd.get("safety", {})
+    con  = saf.get("contraindications", [])
+    cs   = _e("; ".join(con[:2]) if con else "Consult physician if pregnant or on medication.")
     herbs = fd.get("formula", [])
-    ien = _e(_ing_en(herbs, 14))
-    izh = _e(_ing_zh(herbs, 14))
-    nh  = len(herbs)
-    sp  = "  ".join(nen.upper()[:28])
-    d1, d2 = _e(dos[:65]), _e(dos[65:130])
-    i1, i2 = _e(ind[:88]), _e(ind[88:176])
+    ien  = _e(_ing_en(herbs, 12))
+    izh  = _e(_ing_zh(herbs, 12))
+    nh   = len(herbs)
+    sp   = "  ".join(nen.upper()[:24])
+    # Right-panel text — ~58 chars per line fits the 62mm panel at 1.8mm font
+    d1, d2 = _e(dos[:58]), _e(dos[58:116])
+    i1, i2 = _e(ind[:58]), _e(ind[58:116])
+    # Banner line 1: first segment of TCM pattern (up to first comma or 30 chars)
+    pat_short = pat_full.split(",")[0].split(" with ")[0][:30]
+    banner1 = _e(pat_short) if pat_short else "Chinese Proprietary Medicine"
     bot = _botanical(t["botanical"], 28, 22, 16, "#FFFFFF", 0.13)
 
     ff  = "Helvetica Neue,Arial,sans-serif"
@@ -269,8 +277,8 @@ def generate_inner_svg(fd: dict) -> str:
     p.append(f'<text x="27.5" y="22" text-anchor="middle" font-size="9.5" font-weight="700" fill="white" font-family="{zff}" opacity="0.96">{nzh}</text>')
     p.append(f'<text x="27.5" y="27" text-anchor="middle" font-size="2.0" fill="{t["accent"]}" font-family="{ff}" letter-spacing="1.1">{sp[:36]}</text>')
     p.append('<rect x="2" y="29" width="51" height="9" rx="1.5" fill="url(#lgB)" opacity="0.88"/>')
-    p.append(f'<text x="27.5" y="32.8" text-anchor="middle" font-size="2.2" fill="{t["accent2"]}" font-weight="700" font-family="{zff}">{t["label"]}</text>')
-    p.append(f'<text x="27.5" y="36.3" text-anchor="middle" font-size="1.9" fill="white" font-family="{ff}" font-style="italic" opacity="0.88">{pat[:44]}</text>')
+    p.append(f'<text x="27.5" y="32.8" text-anchor="middle" font-size="2.1" fill="{t["accent2"]}" font-weight="700" font-family="{zff}">{banner1}</text>')
+    p.append(f'<text x="27.5" y="36.3" text-anchor="middle" font-size="1.85" fill="white" font-family="{ff}" font-style="italic" opacity="0.88">{pat[:42]}</text>')
     p.append(f'<text x="3" y="39.8" font-size="1.65" fill="{t["text"]}" opacity="0.65" font-family="{ff}">Reg. No.: [SINCPM XXXXXXXX]</text>')
     p.append(f'<text x="52" y="39.8" text-anchor="end" font-size="1.9" fill="{t["accent"]}" font-weight="700" font-family="{ff}">{nh} herbs</text>')
     p.append(f'<line x1="55" y1="0" x2="55" y2="42" stroke="{t["bg"]}" stroke-width="0.6"/>')
@@ -286,13 +294,14 @@ def generate_inner_svg(fd: dict) -> str:
     p.append(f'<text x="57" y="16.7" {tx}>{d1}</text>')
     p.append(f'<text x="57" y="19.1" {tx}>{d2}</text>')
     p.append(f'<text x="57" y="22.5" {hd}>Ingredients:</text>')
-    p.append(f'<text x="57" y="25.2" font-size="1.75" fill="#222" font-family="{ff}">{_e(ien[:88])}</text>')
-    p.append(f'<text x="57" y="27.5" font-size="1.75" fill="#444" font-family="{zff}">{_e(izh[:50])}</text>')
-    p.append(f'<text x="57" y="30.5" {hd}>Cautions:</text>')
-    p.append(f'<text x="57" y="33.0" {sm}>{_e(cs[:88])}</text>')
+    p.append(f'<text x="57" y="25.0" font-size="1.72" fill="#222" font-family="{ff}">{_e(ien[:62])}</text>')
+    p.append(f'<text x="57" y="27.1" font-size="1.72" fill="#222" font-family="{ff}">{_e(ien[62:124])}</text>')
+    p.append(f'<text x="57" y="29.0" font-size="1.65" fill="#444" font-family="{zff}">{_e(izh[:45])}</text>')
+    p.append(f'<text x="57" y="31.2" {hd}>Cautions:</text>')
+    p.append(f'<text x="57" y="33.5" {sm}>{_e(cs[:62])}</text>')
     p.append(f'<text x="57" y="35.5" {sm}>Storage: Cool dry place below 30 C. Keep from children.</text>')
-    p.append(f'<text x="57" y="37.7" font-size="1.6" fill="#555" font-family="{ff}">Allowed for sale as a CPM. {COMPANY}</text>')
-    p.append(f'<text x="57" y="39.6" font-size="1.6" fill="#555" font-family="{ff}">[Batch No]  [Expiry date]  Made in Singapore</text>')
+    p.append(f'<text x="57" y="37.5" font-size="1.6" fill="#555" font-family="{ff}">Allowed for sale as a CPM. {COMPANY}</text>')
+    p.append(f'<text x="57" y="39.4" font-size="1.6" fill="#555" font-family="{ff}">[Batch No]  [Expiry date]  Made in Singapore</text>')
     p.append('</svg>')
     return "\n".join(p)
 
@@ -439,7 +448,7 @@ def generate_sachet_svg(fd: dict) -> str:
     p.append(f'<text x="20" y="108.2" text-anchor="middle" font-size="1.7" fill="{t["text"]}" opacity="0.8" font-family="{ff}">{COMPANY}  Singapore</text>')
     p.append(f'<text x="20" y="113.7" text-anchor="middle" font-size="1.72" fill="{t["accent"]}" font-family="{ff}">[Batch No]  Exp: [MM/YYYY]</text>')
     p.append(f'<text x="20" y="116.5" text-anchor="middle" font-size="1.6" fill="{t["text"]}" opacity="0.65" font-family="Helvetica Neue,Arial,sans-serif">Reg. No.: [SINCPM XXXXXXXX]</text>')
-    p.append(f'<text x="20" y="119" text-anchor="middle" font-size="1.55" fill="{t["text"]}" opacity="0.55" font-family="Helvetica Neue,Arial,sans-serif">Made in Singapore</text>')
+    p.append(f'<text x="20" y="119" text-anchor="middle" font-size="1.55" fill="{t["text"]}" opacity="0.55" font-family="{ff}">Made in Singapore</text>')
     p.append('</svg>')
     return "\n".join(p)
 
