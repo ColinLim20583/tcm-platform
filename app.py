@@ -905,14 +905,15 @@ with tab5:
             key="vr_doc_type"
         )
     with up_col2:
-        uploaded_file = st.file_uploader(
-            "Upload label image or PDF",
+        uploaded_files = st.file_uploader(
+            "Upload label images or PDFs (multiple allowed)",
             type=["jpg", "jpeg", "png", "webp", "pdf"],
-            help="Swatch photos (JPG/PNG/WEBP) or PDF documents",
+            accept_multiple_files=True,
+            help="Select one or more files — swatch photos (JPG/PNG/WEBP) or PDFs",
             key="vr_uploader"
         )
 
-    with st.expander("Or paste label text directly"):
+    with st.expander("Or paste label text directly (single document)"):
         pasted_text = st.text_area(
             "Paste label text",
             height=150,
@@ -920,50 +921,62 @@ with tab5:
             key="vr_paste"
         )
 
-    analyse_btn = st.button("🔍 Analyse Document", type="primary", key="vr_analyse")
+    if uploaded_files:
+        st.caption(f"📎 {len(uploaded_files)} file(s) selected: " +
+                   ", ".join(f.name for f in uploaded_files))
+
+    analyse_btn = st.button("🔍 Analyse Documents", type="primary", key="vr_analyse")
 
     if analyse_btn:
         if not st.session_state.api_key:
             st.error("Enter your Anthropic API key in the sidebar.")
-        elif not uploaded_file and not (pasted_text or "").strip():
-            st.warning("Upload a file or paste label text first.")
+        elif not uploaded_files and not (pasted_text or "").strip():
+            st.warning("Upload at least one file or paste label text first.")
         else:
-            with st.spinner("AI is reviewing document against HSA GL-CHPB-4-001..."):
+            # Build list of jobs: [(filename, bytes, ext)] or text
+            jobs = []
+            if uploaded_files:
+                for uf in uploaded_files:
+                    jobs.append((uf.name, uf.read(), uf.name.rsplit(".", 1)[-1].lower()))
+            if (pasted_text or "").strip():
+                jobs.append(("(pasted text)", pasted_text.strip().encode(), "txt"))
+
+            progress = st.progress(0, text="Starting…")
+            last_findings = {}
+
+            for idx, (filename, file_bytes, ext) in enumerate(jobs):
+                progress.progress(
+                    int((idx / len(jobs)) * 100),
+                    text=f"Analysing {filename} ({idx+1}/{len(jobs)})…"
+                )
                 findings = {}
                 extracted_text = ""
-                filename = "(pasted text)"
 
-                if uploaded_file:
-                    filename = uploaded_file.name
-                    file_bytes = uploaded_file.read()
-                    ext = filename.rsplit(".", 1)[-1].lower()
-
-                    if ext == "pdf":
-                        extracted_text = vr.extract_pdf_text(file_bytes)
-                        if extracted_text.strip():
-                            findings = vr.analyze_label_text(
-                                extracted_text, doc_type, vr_product,
-                                st.session_state.api_key
-                            )
-                        else:
-                            findings = {
-                                "overall_assessment": "INCOMPLETE",
-                                "flags": ["PDF appears scanned — upload as JPG/PNG for vision analysis."],
-                                "missing_items": [], "extracted_text": ""
-                            }
-                    else:
-                        findings = vr.analyze_label_image(
-                            file_bytes, ext, doc_type, vr_product,
-                            st.session_state.api_key
-                        )
-                        extracted_text = findings.get("extracted_text", "")
-
-                elif pasted_text.strip():
-                    extracted_text = pasted_text.strip()
+                if ext == "txt":
+                    extracted_text = file_bytes.decode("utf-8", errors="replace")
                     findings = vr.analyze_label_text(
                         extracted_text, doc_type, vr_product,
                         st.session_state.api_key
                     )
+                elif ext == "pdf":
+                    extracted_text = vr.extract_pdf_text(file_bytes)
+                    if extracted_text.strip():
+                        findings = vr.analyze_label_text(
+                            extracted_text, doc_type, vr_product,
+                            st.session_state.api_key
+                        )
+                    else:
+                        findings = {
+                            "overall_assessment": "INCOMPLETE",
+                            "flags": ["PDF appears scanned — upload as JPG/PNG for vision analysis."],
+                            "missing_items": [], "extracted_text": ""
+                        }
+                else:
+                    findings = vr.analyze_label_image(
+                        file_bytes, ext, doc_type, vr_product,
+                        st.session_state.api_key
+                    )
+                    extracted_text = findings.get("extracted_text", "")
 
                 # Rule-based cross-checks
                 if extracted_text and doc_type.startswith("sg"):
@@ -984,9 +997,13 @@ with tab5:
                 )
                 for cid in vr.LABEL_CHECKLIST_MAP.get(doc_type, []):
                     sm = {"PASS": "DONE", "FAIL": "ISSUES", "INCOMPLETE": "PENDING"}
-                    vr.upsert_checklist_status(vr_pid, cid, sm.get(overall, "PENDING"), f"From {filename}")
+                    vr.upsert_checklist_status(
+                        vr_pid, cid, sm.get(overall, "PENDING"), f"From {filename}"
+                    )
+                last_findings = findings
 
-                st.session_state[f"vr_{vr_pid}_{doc_type}"] = findings
+            progress.progress(100, text=f"Done — {len(jobs)} document(s) analysed.")
+            st.session_state[f"vr_{vr_pid}_{doc_type}"] = last_findings
 
     # ── Step 3: Compliance Results ────────────────────────────────────────────
     findings_key = f"vr_{vr_pid}_{doc_type}"
@@ -1193,22 +1210,26 @@ with tab5:
         st.markdown(_tbl(r, ["Micro-organism", "Limit", "Unit"]), unsafe_allow_html=True)
 
     with lim_t3:
-        r = "".join(
-            "<tr style='border-bottom:1px solid #1e3a52'>"
-            "<td style='color:#c9d8e8;padding:5px 12px'>" + k + "</td>"
-            "<td style='color:#22c55e;font-weight:700;padding:5px 12px'>" + v["operator"] + " " + str(v["limit"]) + " " + v["unit"] + "</td>"
-            "<td style='color:#6b8ba4;font-size:11px;padding:5px 12px'>" + v.get("note", "") + "</td></tr>"
-            for k, v in vr.DEG_EG_LIMITS.items()
-        )
-        st.markdown(_tbl(r, ["Parameter", "HSA Limit", "Notes"]), unsafe_allow_html=True)
+        deg_rows = ""
+        for k, v in vr.DEG_EG_LIMITS.items():
+            deg_rows += (
+                "<tr style='border-bottom:1px solid #1e3a52'>"
+                "<td style='color:#c9d8e8;padding:5px 12px'>" + k + "</td>"
+                "<td style='color:#22c55e;font-weight:700;padding:5px 12px'>"
+                + v["operator"] + " " + str(v["limit"]) + " " + v["unit"] + "</td>"
+                "<td style='color:#6b8ba4;font-size:11px;padding:5px 12px'>"
+                + v.get("note", "") + "</td></tr>"
+            )
+        st.markdown(_tbl(deg_rows, ["Parameter", "HSA Limit", "Notes"]), unsafe_allow_html=True)
         st.info("Required only for oral liquid products (checklist item 7).")
 
     with lim_t4:
-        r = "".join(
-            "<tr style='border-bottom:1px solid #1e3a52'>"
-            "<td style='color:#c9d8e8;padding:5px 12px'>" + k + "</td>"
-            "<td style='color:#22c55e;font-weight:700;padding:5px 12px'>" + str(v) + "</td></tr>"
-            for k, v in vr.VITAMIN_MINERAL_LIMITS.items()
-        )
-        st.markdown(_tbl(r, ["Nutrient", "Maximum Daily Limit"]), unsafe_allow_html=True)
+        vm_rows = ""
+        for k, v in vr.VITAMIN_MINERAL_LIMITS.items():
+            vm_rows += (
+                "<tr style='border-bottom:1px solid #1e3a52'>"
+                "<td style='color:#c9d8e8;padding:5px 12px'>" + k + "</td>"
+                "<td style='color:#22c55e;font-weight:700;padding:5px 12px'>" + str(v) + "</td></tr>"
+            )
+        st.markdown(_tbl(vm_rows, ["Nutrient", "Maximum Daily Limit"]), unsafe_allow_html=True)
         st.caption("* Iron 15 mg/day; 30 mg/day may apply for pregnant women multivitamin supplements.")
