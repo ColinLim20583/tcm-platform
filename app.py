@@ -871,7 +871,11 @@ with tab5:
 
     # ── Step 1: Select Product ────────────────────────────────────────────────
     st.markdown("#### Step 1 — Select Product")
-    products = vr.get_all_product_names()
+    try:
+        products = vr.get_all_product_names()
+    except Exception as _e:
+        st.error(f"Database error loading products: {_e}")
+        products = []
 
     if not products:
         st.info("No saved products yet. Generate and save a formulation in the Formulation Generator tab first.")
