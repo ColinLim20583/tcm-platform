@@ -597,21 +597,32 @@ def validate_deg_eg(results: dict) -> list:
 # ─── PDF TEXT EXTRACTION ──────────────────────────────────────────────────────
 
 def extract_pdf_text(pdf_bytes: bytes) -> str:
-    """Extract text from PDF bytes; tries pdfplumber first, pypdf as fallback."""
+    """Extract text from PDF bytes; tries pdfplumber first, pypdf as fallback.
+    Returns empty string for scanned PDFs (no selectable text).
+    """
     try:
-        import pdfplumber
-        import io as _io
+        import pdfplumber, io as _io
         with pdfplumber.open(_io.BytesIO(pdf_bytes)) as pdf:
-            return "\n".join(p.extract_text() or "" for p in pdf.pages)
+            text = "\n".join(p.extract_text() or "" for p in pdf.pages).strip()
+            if text:
+                return text
+    except ImportError:
+        pass
     except Exception:
         pass
     try:
         from pypdf import PdfReader
         import io as _io
         reader = PdfReader(_io.BytesIO(pdf_bytes))
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
-    except Exception as e:
-        return f"[PDF extraction failed: {e}]"
+        text = "\n".join(page.extract_text() or "" for page in reader.pages).strip()
+        if text:
+            return text
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    # Return empty string so caller knows to prompt for image upload instead
+    return ""
 
 
 # ─── COMPLIANCE ROW BUILDER ───────────────────────────────────────────────────
