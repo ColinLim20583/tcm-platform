@@ -246,7 +246,7 @@ VITAMIN_MINERAL_LIMITS = {
 
 # ─── DATABASE ─────────────────────────────────────────────────────────────────
 
-DB_PATH = Path(__file__).parent / "chemigran.db"
+DB_PATH = Path(__file__).parent / "tcm_knowledge.db"
 
 
 def _conn():
