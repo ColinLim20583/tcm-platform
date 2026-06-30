@@ -1229,7 +1229,6 @@ with tab5:
                 unsafe_allow_html=True
             )
             st.caption("* Iron 15 mg/day; 30 mg/day may be considered for multivitamin supplements for pregnant women.")
-pplements for pregnant women.")
 
         # ── Step 5: Previous documents ────────────────────────────────────────
         st.divider()
