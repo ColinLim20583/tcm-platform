@@ -1152,7 +1152,43 @@ with tab5:
         </div>
         """, unsafe_allow_html=True)
 
-        # ── HSA Limits Reference ────────────────────────────────────────────        st.divider()
+        # ── Step 5: Previous documents ────────────────────────────────────────
+        st.divider()
+        st.markdown("#### Previously Reviewed Documents")
+        prev_docs = vr.get_vendor_docs(selected_product_id)
+        if not prev_docs:
+            st.info("No documents reviewed yet for this product.")
+        else:
+            for doc in prev_docs:
+                overall_d = doc.get("overall", "PENDING")
+                icon_d = {"PASS": "✅", "FAIL": "❌", "INCOMPLETE": "⚠️", "ERROR": "🚨"}.get(overall_d, "⏳")
+                label_d = vr.LABEL_TYPES.get(doc.get("doc_type", ""), doc.get("doc_type", ""))
+                with st.expander(
+                    f"{icon_d} {label_d} — {doc.get('filename', '')} — {doc.get('created_at', '')[:16]}"
+                ):
+                    try:
+                        findings_d = json.loads(doc.get("ai_findings", "{}") or "{}")
+                    except Exception:
+                        findings_d = {}
+                    flags_d = findings_d.get("flags", [])
+                    missing_d = findings_d.get("missing_items", [])
+                    if flags_d:
+                        st.markdown("**Issues:**")
+                        for f2 in flags_d:
+                            st.markdown(f"- {f2}")
+                    if missing_d:
+                        st.markdown("**Missing:**")
+                        for m2 in missing_d:
+                            st.markdown(f"- {m2}")
+                    if not flags_d and not missing_d:
+                        st.success("No issues found.")
+                    ext_d = doc.get("extracted_text", "")
+                    if ext_d:
+                        with st.expander("Label text"):
+                            st.text(ext_d[:1500])
+
+        # ── HSA Limits Reference ─────────────────────────────────────────────
+        st.divider()
         st.markdown("#### 📊 HSA Limits Reference")
         st.caption("From TCM Registration Excel — Limit sheet. Use when reviewing lab test reports (checklist item 6).")
 
@@ -1186,100 +1222,46 @@ with tab5:
             )
 
         with lim_tab2:
-            mc_rows = "".join(
-                f"<tr style='border-bottom:1px solid #1e3a52'>"
-                f"<td style='color:#c9d8e8;padding:5px 12px'>{k}</td>"
-                f"<td style='color:#22c55e;font-weight:700;padding:5px 12px'>"
-                f"{v['limit']}</td>"
-                f"<td style='color:#6b8ba4;font-size:11px;padding:5px 12px'>"
-                f"{v['unit']}</td></tr>"
-                for k, v in vr.MICROBIAL_LIMITS.items()
-            )
-            st.markdown(
-                _limits_table(mc_rows, ["Micro-organism", "Limit", "Unit"]),
-                unsafe_allow_html=True
-            )
+            mc_html = "<table style='width:100%;border-collapse:collapse;font-size:13px'>"
+            mc_html += "<tr><th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>Micro-organism</th>"
+            mc_html += "<th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>Limit</th>"
+            mc_html += "<th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>Unit</th></tr>"
+            for k, v in vr.MICROBIAL_LIMITS.items():
+                mc_html += (
+                    "<tr style='border-bottom:1px solid #1e3a52'>"
+                    "<td style='color:#c9d8e8;padding:5px 12px'>" + k + "</td>"
+                    "<td style='color:#22c55e;font-weight:700;padding:5px 12px'>" + str(v["limit"]) + "</td>"
+                    "<td style='color:#6b8ba4;font-size:11px;padding:5px 12px'>" + str(v["unit"]) + "</td></tr>"
+                )
+            mc_html += "</table>"
+            st.markdown(mc_html, unsafe_allow_html=True)
 
         with lim_tab3:
-            deg_rows = "".join(
-                f"<tr style='border-bottom:1px solid #1e3a52'>"
-                f"<td style='color:#c9d8e8;padding:5px 12px'>{k}</td>"
-                f"<td style='color:#22c55e;font-weight:700;padding:5px 12px'>"
-                f"{v['operator']} {v['limit']} {v['unit']}</td>"
-                f"<td style='color:#6b8ba4;font-size:11px;padding:5px 12px'>"
-                f"{v.get('note','')}</td></tr>"
-                for k, v in vr.DEG_EG_LIMITS.items()
-            )
-            st.markdown(
-                _limits_table(deg_rows, ["Parameter", "HSA Limit", "Notes"]),
-                unsafe_allow_html=True
-            )
+            deg_html = "<table style='width:100%;border-collapse:collapse;font-size:13px'>"
+            deg_html += "<tr><th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>Parameter</th>"
+            deg_html += "<th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>HSA Limit</th>"
+            deg_html += "<th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>Notes</th></tr>"
+            for k, v in vr.DEG_EG_LIMITS.items():
+                deg_html += (
+                    "<tr style='border-bottom:1px solid #1e3a52'>"
+                    "<td style='color:#c9d8e8;padding:5px 12px'>" + k + "</td>"
+                    "<td style='color:#22c55e;font-weight:700;padding:5px 12px'>" + v["operator"] + " " + str(v["limit"]) + " " + v["unit"] + "</td>"
+                    "<td style='color:#6b8ba4;font-size:11px;padding:5px 12px'>" + v.get("note", "") + "</td></tr>"
+                )
+            deg_html += "</table>"
+            st.markdown(deg_html, unsafe_allow_html=True)
             st.info("DEG/EG testing required only for oral liquid products (checklist item 7).")
 
         with lim_tab4:
-            vm_rows = "".join(
-                f"<tr style='border-bottom:1px solid #1e3a52'>"
-                f"<td style='color:#c9d8e8;padding:5px 12px'>{k}</td>"
-                f"<td style='color:#22c55e;font-weight:700;padding:5px 12px'>"
-                f"{v}</td></tr>"
-                for k, v in vr.VITAMIN_MINERAL_LIMITS.items()
-            )
-            st.markdown(
-                _limits_table(vm_rows, ["Nutrient", "Maximum Daily Limit"]),
-                unsafe_allow_html=True
-            )
+            vm_html = "<table style='width:100%;border-collapse:collapse;font-size:13px'>"
+            vm_html += "<tr><th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>Nutrient</th>"
+            vm_html += "<th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>Maximum Daily Limit</th></tr>"
+            for k, v in vr.VITAMIN_MINERAL_LIMITS.items():
+                vm_html += (
+                    "<tr style='border-bottom:1px solid #1e3a52'>"
+                    "<td style='color:#c9d8e8;padding:5px 12px'>" + k + "</td>"
+                    "<td style='color:#22c55e;font-weight:700;padding:5px 12px'>" + str(v) + "</td></tr>"
+                )
+            vm_html += "</table>"
+            st.markdown(vm_html, unsafe_allow_html=True)
             st.caption("* Iron 15 mg/day; 30 mg/day may be considered for multivitamin supplements for pregnant women.")
-
-        # ── Step 5: Previous documents ────────────────────────────────────────
-        st.divider()
-        st.markdown("#### Previously Reviewed Documents")
-        prev_docs = vr.get_vendor_docs(selected_product_id)
-        if not prev_docs:
-            st.info("No documents reviewed yet for this product.")
-        else:
-            for doc in prev_docs:
-                overall_d = doc.get("overall", "PENDING")
-                icon_d = {"PASS":"✅","FAIL":"❌","INCOMPLETE":"⚠️","ERROR":"🚨"}.get(overall_d, "⏳")
-                label_d = vr.LABEL_TYPES.get(doc.get("doc_type",""), doc.get("doc_type",""))
-                with st.expander(f"{icon_d} {label_d} — {doc.get('filename','')} — {doc.get('created_at','')[:16]}"):
-                    try:
-                        findings_d = json.loads(doc.get("ai_findings","{}") or "{}")
-                    except Exception:
-                        findings_d = {}
-                    flags_d = findings_d.get("flags", [])
-                    missing_d = findings_d.get("missing_items", [])
-                    if flags_d:
-                        st.markdown("**Issues:**")
-                        for f2 in flags_d:
-                            st.markdown(f"- {f2}")
-                    if missing_d:
-                        st.markdown("**Missing:**")
-                        for m2 in missing_d:
-                            st.markdown(f"- {m2}")
-                    if not flags_d and not missing_d:
-                        st.success("No issues found.")
-                    ext_d = doc.get("extracted_text", "")
-                    if ext_d:
-                        with st.expander("Label text"):
-                            st.text(ext_d[:1500])
-               findings_d = {}
-                try:
-                    findings_d = json.loads(doc.get("ai_findings","{}") or "{}")
-                except Exception:
-                    pass
-                flags_d = findings_d.get("flags", [])
-                missing_d = findings_d.get("missing_items", [])
-                if flags_d:
-                    st.markdown("**Issues:**")
-                    for f in flags_d:
-                        st.markdown(f"- {f}")
-                if missing_d:
-                    st.markdown("**Missing:**")
-                    for m in missing_d:
-                        st.markdown(f"- {m}")
-                if not flags_d and not missing_d:
-                    st.success("No issues found.")
-                ext_d = doc.get("extracted_text","")
-                if ext_d:
-                    with st.expander("Label text"):
-                        st.text(ext_d[:1500])
