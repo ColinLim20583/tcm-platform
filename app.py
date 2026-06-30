@@ -847,425 +847,368 @@ with tab4:
             st.markdown(entry.get("evidence_text",""))
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — SUBMISSION REVIEW (RAG Vendor Document Validator)
+# TAB 5 — SUBMISSION REVIEW (Standalone Vendor Document Validator)
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab5:
     st.markdown("### 📋 Submission Review — Vendor Document Validator")
     st.markdown(
-        "*Upload vendor label images or PDFs. AI validates each document against "
-        "HSA GL-CHPB-4-001 (Jan 2025) and tracks your full submission readiness.*"
+        "*Upload any vendor label image or PDF. AI validates it against "
+        "HSA GL-CHPB-4-001 (Jan 2025) and tracks your submission checklist.*"
     )
 
     st.markdown("""
     <style>
-      .check-row { display:flex; align-items:center; gap:10px; padding:6px 0;
+      .check-row { display:flex; align-items:flex-start; gap:10px; padding:8px 0;
                    border-bottom:1px solid #1e3a52; font-size:14px; }
       .check-row:last-child { border-bottom:none; }
-      .check-badge { min-width:90px; font-size:12px; font-weight:700;
-                     padding:3px 10px; border-radius:4px; text-align:center; }
-      .badge-pass  { background:#0d2b1a; color:#22c55e; border:1px solid #22c55e; }
-      .badge-fail  { background:#2a0e0e; color:#ef4444; border:1px solid #ef4444; }
-      .badge-na    { background:#1e2a3a; color:#6b8ba4; border:1px solid #2d4a6a; }
+      .check-badge { min-width:72px; font-size:11px; font-weight:700;
+                     padding:3px 8px; border-radius:4px; text-align:center; flex-shrink:0; margin-top:2px; }
+      .badge-pass { background:#0d2b1a; color:#22c55e; border:1px solid #22c55e; }
+      .badge-fail { background:#2a0e0e; color:#ef4444; border:1px solid #ef4444; }
+      .badge-na   { background:#1e2a3a; color:#6b8ba4; border:1px solid #2d4a6a; }
     </style>
     """, unsafe_allow_html=True)
 
-    # ── Step 1: Select Product ────────────────────────────────────────────────
-    st.markdown("#### Step 1 — Select Product")
-    try:
-        products = vr.get_all_product_names()
-    except Exception as _e:
-        st.error(f"Database error loading products: {_e}")
-        products = []
-
-    if not products:
-        st.info("No saved products yet. Generate and save a formulation in the Formulation Generator tab first.")
-    else:
-        product_options = {name: pid for pid, name in products}
-        selected_product_name = st.selectbox(
-            "Product",
-            options=list(product_options.keys()),
-            help="Products saved to your Knowledge Base"
+    # ── Product Name (free text — no dependency on Knowledge Base) ────────────
+    st.markdown("#### Step 1 — Enter Product Name")
+    prod_col1, prod_col2 = st.columns([2, 1])
+    with prod_col1:
+        product_name_input = st.text_input(
+            "Product name",
+            placeholder="e.g. Gui Pi Wan Granules / 归脾丸颗粒",
+            key="vr_product_name",
+            help="Type any product name — this tab is fully independent of other tabs"
         )
-        selected_product_id = product_options[selected_product_name]
+    with prod_col2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.caption("Works for any product — does not need to be saved in the Knowledge Base")
 
-        # ── Step 2: Upload & Analyse Document ────────────────────────────────
-        st.divider()
-        st.markdown("#### Step 2 — Upload Vendor Document")
+    vr_product = product_name_input.strip()
 
-        up_col1, up_col2 = st.columns([1, 1])
-        with up_col1:
-            doc_type = st.selectbox(
-                "Document Type",
-                options=list(vr.LABEL_TYPES.keys()),
-                format_func=lambda k: vr.LABEL_TYPES[k],
-            )
-        with up_col2:
-            uploaded_file = st.file_uploader(
-                "Upload label image or PDF",
-                type=["jpg", "jpeg", "png", "webp", "pdf"],
-                help="Swatch photos (JPG/PNG/WEBP) or PDF documents"
-            )
+    if not vr_product:
+        st.info("Enter a product name above to begin uploading and validating documents.")
+        st.stop()
 
-        with st.expander("Or paste label text directly"):
-            pasted_text = st.text_area(
-                "Paste label text",
-                height=150,
-                placeholder="Paste all visible text from the label here."
-            )
+    # Use a stable short ID derived from product name
+    vr_pid = str(abs(hash(vr_product)) % 10 ** 9)
 
-        analyse_btn = st.button("Analyse Document", type="primary")
+    # ── Step 2: Upload & Analyse ──────────────────────────────────────────────
+    st.divider()
+    st.markdown("#### Step 2 — Upload Vendor Document")
 
-        if analyse_btn:
-            if not st.session_state.api_key:
-                st.error("Enter your Anthropic API key in the sidebar.")
-            elif not uploaded_file and not (pasted_text or "").strip():
-                st.warning("Upload a file or paste label text.")
-            else:
-                with st.spinner("AI is reviewing document against HSA GL-CHPB-4-001..."):
-                    findings = {}
-                    extracted_text = ""
-                    filename = "(pasted text)"
+    up_col1, up_col2 = st.columns([1, 1])
+    with up_col1:
+        doc_type = st.selectbox(
+            "Document Type",
+            options=list(vr.LABEL_TYPES.keys()),
+            format_func=lambda k: vr.LABEL_TYPES[k],
+            key="vr_doc_type"
+        )
+    with up_col2:
+        uploaded_file = st.file_uploader(
+            "Upload label image or PDF",
+            type=["jpg", "jpeg", "png", "webp", "pdf"],
+            help="Swatch photos (JPG/PNG/WEBP) or PDF documents",
+            key="vr_uploader"
+        )
 
-                    if uploaded_file:
-                        filename = uploaded_file.name
-                        file_bytes = uploaded_file.read()
-                        ext = filename.rsplit(".", 1)[-1].lower()
+    with st.expander("Or paste label text directly"):
+        pasted_text = st.text_area(
+            "Paste label text",
+            height=150,
+            placeholder="Paste all visible text from the label here.",
+            key="vr_paste"
+        )
 
-                        if ext == "pdf":
-                            extracted_text = vr.extract_pdf_text(file_bytes)
-                            if extracted_text.strip():
-                                findings = vr.analyze_label_text(
-                                    extracted_text, doc_type, selected_product_name,
-                                    st.session_state.api_key
-                                )
-                            else:
-                                findings = {
-                                    "overall_assessment": "INCOMPLETE",
-                                    "flags": ["PDF appears scanned — upload as JPG/PNG for vision analysis."],
-                                    "missing_items": [], "extracted_text": ""
-                                }
-                        else:
-                            findings = vr.analyze_label_image(
-                                file_bytes, ext, doc_type, selected_product_name,
+    analyse_btn = st.button("🔍 Analyse Document", type="primary", key="vr_analyse")
+
+    if analyse_btn:
+        if not st.session_state.api_key:
+            st.error("Enter your Anthropic API key in the sidebar.")
+        elif not uploaded_file and not (pasted_text or "").strip():
+            st.warning("Upload a file or paste label text first.")
+        else:
+            with st.spinner("AI is reviewing document against HSA GL-CHPB-4-001..."):
+                findings = {}
+                extracted_text = ""
+                filename = "(pasted text)"
+
+                if uploaded_file:
+                    filename = uploaded_file.name
+                    file_bytes = uploaded_file.read()
+                    ext = filename.rsplit(".", 1)[-1].lower()
+
+                    if ext == "pdf":
+                        extracted_text = vr.extract_pdf_text(file_bytes)
+                        if extracted_text.strip():
+                            findings = vr.analyze_label_text(
+                                extracted_text, doc_type, vr_product,
                                 st.session_state.api_key
                             )
-                            extracted_text = findings.get("extracted_text", "")
-
-                    elif pasted_text.strip():
-                        extracted_text = pasted_text.strip()
-                        findings = vr.analyze_label_text(
-                            extracted_text, doc_type, selected_product_name,
+                        else:
+                            findings = {
+                                "overall_assessment": "INCOMPLETE",
+                                "flags": ["PDF appears scanned — upload as JPG/PNG for vision analysis."],
+                                "missing_items": [], "extracted_text": ""
+                            }
+                    else:
+                        findings = vr.analyze_label_image(
+                            file_bytes, ext, doc_type, vr_product,
                             st.session_state.api_key
                         )
+                        extracted_text = findings.get("extracted_text", "")
 
-                    # Rule-based cross-checks
-                    if extracted_text and doc_type.startswith("sg"):
-                        if vr.has_pinyin(extracted_text):
-                            findings.setdefault("flags", []).append(
-                                "Hanyu Pinyin tone marks detected — remove from Singapore sale labels."
-                            )
-                            findings["has_hanyu_pinyin"] = True
-                        found_claims = vr.check_prohibited_claims(extracted_text)
-                        if found_claims:
-                            findings.setdefault("flags", []).append(
-                                "Prohibited disease claims: " + ", ".join(found_claims)
-                            )
-                            findings["prohibited_claims_found"] = found_claims
-
-                    overall = findings.get("overall_assessment", "INCOMPLETE")
-
-                    vr.save_vendor_doc(
-                        selected_product_id, selected_product_name,
-                        doc_type, filename, extracted_text, findings, overall
+                elif pasted_text.strip():
+                    extracted_text = pasted_text.strip()
+                    findings = vr.analyze_label_text(
+                        extracted_text, doc_type, vr_product,
+                        st.session_state.api_key
                     )
 
-                    # Auto-tick submission tracker
-                    for cid in vr.LABEL_CHECKLIST_MAP.get(doc_type, []):
-                        sm = {"PASS": "DONE", "FAIL": "ISSUES", "INCOMPLETE": "PENDING", "ERROR": "PENDING"}
-                        vr.upsert_checklist_status(
-                            selected_product_id, cid, sm.get(overall, "PENDING"),
-                            f"From {filename}"
+                # Rule-based cross-checks
+                if extracted_text and doc_type.startswith("sg"):
+                    if vr.has_pinyin(extracted_text):
+                        findings.setdefault("flags", []).append(
+                            "Hanyu Pinyin tone marks detected — remove from Singapore sale labels."
+                        )
+                    found_claims = vr.check_prohibited_claims(extracted_text)
+                    if found_claims:
+                        findings.setdefault("flags", []).append(
+                            "Prohibited disease claims: " + ", ".join(found_claims)
                         )
 
-                    st.session_state[f"vr_{selected_product_id}_{doc_type}"] = findings
-
-        # ── Step 3: Compliance Results ─────────────────────────────────────────
-        findings_key = f"vr_{selected_product_id}_{doc_type}"
-        if findings_key in st.session_state:
-            findings = st.session_state[findings_key]
-            overall = findings.get("overall_assessment", "INCOMPLETE")
-
-            st.divider()
-            st.markdown("#### Step 3 — Compliance Check Results")
-
-            bcolors = {"PASS":"#22c55e","FAIL":"#ef4444","INCOMPLETE":"#f59e0b","ERROR":"#ef4444"}
-            bbg     = {"PASS":"#0d2b1a","FAIL":"#2a0e0e","INCOMPLETE":"#2a1f0e","ERROR":"#2a0e0e"}
-            bicon   = {"PASS":"✅","FAIL":"❌","INCOMPLETE":"⚠️","ERROR":"🚨"}
-            bc = bcolors.get(overall, "#f59e0b")
-            bg = bbg.get(overall, "#2a1f0e")
-            ic = bicon.get(overall, "⚠️")
-
-            st.markdown(f"""
-            <div style="background:{bg};border:2px solid {bc};border-radius:10px;
-                        padding:14px 20px;margin-bottom:16px;">
-              <span style="color:{bc};font-size:18px;font-weight:700">
-                {ic} {vr.LABEL_TYPES.get(doc_type, doc_type)} — {overall}
-              </span>
-            </div>
-            """, unsafe_allow_html=True)
-
-            compliance_rows = vr.build_compliance_rows(doc_type, findings)
-            rows_html = ""
-            for row in compliance_rows:
-                s = row["status"]
-                bcls = "badge-pass" if "PASS" in s else "badge-fail" if "FAIL" in s else "badge-na"
-                rows_html += (
-                    f'<div class="check-row">'
-                    f'<span class="check-badge {bcls}">{s}</span>'
-                    f'<span style="flex:1;color:#c9d8e8">{row["field"]}</span>'
-                    f'<span style="color:#8aa5bf;font-size:12px;font-style:italic">{row["note"]}</span>'
-                    f'</div>'
+                overall = findings.get("overall_assessment", "INCOMPLETE")
+                vr.save_vendor_doc(
+                    vr_pid, vr_product, doc_type, filename,
+                    extracted_text, findings, overall
                 )
-            st.markdown(
-                f'<div style="background:#162334;border:1px solid #2d4a6a;'
-                f'border-radius:10px;padding:16px 20px">{rows_html}</div>',
-                unsafe_allow_html=True
-            )
+                for cid in vr.LABEL_CHECKLIST_MAP.get(doc_type, []):
+                    sm = {"PASS": "DONE", "FAIL": "ISSUES", "INCOMPLETE": "PENDING"}
+                    vr.upsert_checklist_status(vr_pid, cid, sm.get(overall, "PENDING"), f"From {filename}")
 
-            flags = findings.get("flags", [])
-            missing = findings.get("missing_items", [])
-            if flags:
-                st.markdown("**Issues flagged:**")
-                for f in flags:
-                    st.markdown(f"- {f}")
-            if missing:
-                st.markdown("**Missing required items:**")
-                for m in missing:
-                    st.markdown(f"- {m}")
-            ext_text = findings.get("extracted_text", "")
-            if ext_text:
-                with st.expander("View extracted label text"):
-                    st.text(ext_text[:2000])
+                st.session_state[f"vr_{vr_pid}_{doc_type}"] = findings
 
-        # ── Step 4: Submission Tracker ────────────────────────────────────────
+    # ── Step 3: Compliance Results ────────────────────────────────────────────
+    findings_key = f"vr_{vr_pid}_{doc_type}"
+    if findings_key in st.session_state:
+        findings = st.session_state[findings_key]
+        overall = findings.get("overall_assessment", "INCOMPLETE")
+
         st.divider()
-        st.markdown("#### Step 4 — HSA Submission Readiness Tracker")
-        st.caption(
-            "17-item checklist from TCM Registration Excel (HSA Requirement sheet). "
-            "Mandatory = required for all products. Conditional = required only where stated."
+        st.markdown("#### Step 3 — Compliance Check Results")
+
+        bc = {"PASS": "#22c55e", "FAIL": "#ef4444", "INCOMPLETE": "#f59e0b"}.get(overall, "#f59e0b")
+        bg = {"PASS": "#0d2b1a", "FAIL": "#2a0e0e", "INCOMPLETE": "#2a1f0e"}.get(overall, "#2a1f0e")
+        ic = {"PASS": "✅", "FAIL": "❌", "INCOMPLETE": "⚠️"}.get(overall, "⚠️")
+
+        st.markdown(
+            f'<div style="background:{bg};border:2px solid {bc};border-radius:10px;'
+            f'padding:14px 20px;margin-bottom:16px">'
+            f'<span style="color:{bc};font-size:18px;font-weight:700">'
+            f'{ic} {vr.LABEL_TYPES.get(doc_type, doc_type)} — {overall}'
+            f'</span></div>',
+            unsafe_allow_html=True
         )
 
-        checklist_status = vr.get_checklist_status(selected_product_id)
-
-        # Conditional flags
-        c1, c2 = st.columns(2)
-        with c1:
-            is_oral_liquid = st.checkbox(
-                "Product is oral liquid (DEG/EG test required)",
-                key="chk_oral_liquid"
-            )
-        with c2:
-            has_fermented = st.checkbox(
-                "Product contains fermented ingredient (CPMF11-5 required)",
-                key="chk_fermented"
-            )
-
-        categories = list(dict.fromkeys(c["category"] for c in vr.SUBMISSION_CHECKLIST))
-        done_count = 0
-        total_required = 0
-
-        for cat in categories:
-            items_in_cat = [c for c in vr.SUBMISSION_CHECKLIST if c["category"] == cat]
-            st.markdown(f"**{cat}**")
-            for item in items_in_cat:
-                # Resolve conditional items
-                if item["mandatory"] == "Conditional":
-                    if item["id"] == 7 and not is_oral_liquid:
-                        continue   # DEG/EG — only for oral liquids
-                    if item["id"] == 16 and not has_fermented:
-                        continue   # Fermented substance — only if applicable
-
-                total_required += 1
-                cur = checklist_status.get(item["id"], {})
-                cur_status = cur.get("status", "PENDING")
-                if cur_status == "DONE":
-                    done_count += 1
-
-                # Mandatory / Conditional badge
-                mand_badge = (
-                    "<span style='font-size:10px;color:#6b8ba4;"
-                    "border:1px solid #2d4a6a;border-radius:3px;"
-                    "padding:1px 5px;margin-right:4px'>COND</span>"
-                    if item["mandatory"] == "Conditional" else ""
-                )
-                # Form reference badge
-                form_ref = item.get("form", "—")
-                form_badge = (
-                    f"<span style='font-size:10px;color:#7ec8e3;"
-                    f"border:1px solid #2d5a7e;border-radius:3px;"
-                    f"padding:1px 5px;margin-right:6px'>{form_ref}</span>"
-                    if form_ref and form_ref != "—" else ""
-                )
-                remarks = item.get("remarks", "")
-
-                status_html = {
-                    "DONE":    "<span style='color:#22c55e;font-weight:700'>✅ Done</span>",
-                    "ISSUES":  "<span style='color:#ef4444;font-weight:700'>❌ Issues</span>",
-                    "PENDING": "<span style='color:#f59e0b;font-weight:700'>⏳ Pending</span>",
-                }.get(cur_status, "<span style='color:#f59e0b;font-weight:700'>⏳ Pending</span>")
-
-                col_item, col_status, col_action = st.columns([5, 1, 1])
-                with col_item:
-                    st.markdown(
-                        f"<div style='line-height:1.4'>"
-                        f"{mand_badge}{form_badge}"
-                        f"<span style='font-size:13px;color:#c9d8e8'>"
-                        f"<b>{item['id']}.</b> {item['item']}</span>"
-                        f"<br><span style='font-size:11px;color:#6b8ba4;padding-left:4px'>"
-                        f"{remarks}</span></div>",
-                        unsafe_allow_html=True
-                    )
-                with col_status:
-                    st.markdown(status_html, unsafe_allow_html=True)
-                with col_action:
-                    opts = ["PENDING", "DONE", "ISSUES"]
-                    idx_s = opts.index(cur_status) if cur_status in opts else 0
-                    new_st = st.selectbox(
-                        "Status", opts, index=idx_s,
-                        key=f"tr_{selected_product_id}_{item['id']}",
-                        label_visibility="collapsed"
-                    )
-                    if new_st != cur_status:
-                        vr.upsert_checklist_status(selected_product_id, item["id"], new_st)
-                        st.rerun()
-            st.markdown("---")
-
-        pct = int(done_count / total_required * 100) if total_required else 0
-        pct_color = "#22c55e" if pct == 100 else "#f59e0b" if pct >= 50 else "#ef4444"
-        ready_msg = (
-            "<div style='color:#22c55e;font-weight:700;margin-top:8px'>"
-            "🎉 All items complete — ready to submit via HSA PRISM!</div>"
-            if pct == 100 else ""
+        compliance_rows = vr.build_compliance_rows(doc_type, findings)
+        rows_html = "".join(
+            '<div class="check-row">'
+            '<span class="check-badge ' + ("badge-pass" if r["status"] == "PASS" else "badge-fail" if r["status"] == "FAIL" else "badge-na") + '">' + r["status"] + '</span>'
+            '<span style="color:#c9d8e8;flex:1">' + r["field"] + '</span>'
+            '</div>'
+            for r in compliance_rows
         )
-        st.markdown(f"""
-        <div style="background:#162334;border:1px solid #2d4a6a;border-radius:10px;
-                    padding:16px 20px;text-align:center;margin-top:12px">
-          <div style="font-size:32px;font-weight:800;color:{pct_color}">{pct}%</div>
-          <div style="color:#8aa5bf;font-size:14px">{done_count} of {total_required} items complete</div>
-          {ready_msg}
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            '<div style="background:#162334;border:1px solid #2d4a6a;'
+            'border-radius:10px;padding:16px 20px">' + rows_html + '</div>',
+            unsafe_allow_html=True
+        )
 
-        # ── Step 5: Previous documents ────────────────────────────────────────
-        st.divider()
-        st.markdown("#### Previously Reviewed Documents")
-        prev_docs = vr.get_vendor_docs(selected_product_id)
-        if not prev_docs:
-            st.info("No documents reviewed yet for this product.")
-        else:
-            for doc in prev_docs:
-                overall_d = doc.get("overall", "PENDING")
-                icon_d = {"PASS": "✅", "FAIL": "❌", "INCOMPLETE": "⚠️", "ERROR": "🚨"}.get(overall_d, "⏳")
-                label_d = vr.LABEL_TYPES.get(doc.get("doc_type", ""), doc.get("doc_type", ""))
-                with st.expander(
-                    f"{icon_d} {label_d} — {doc.get('filename', '')} — {doc.get('created_at', '')[:16]}"
-                ):
-                    try:
-                        findings_d = json.loads(doc.get("ai_findings", "{}") or "{}")
-                    except Exception:
-                        findings_d = {}
-                    flags_d = findings_d.get("flags", [])
-                    missing_d = findings_d.get("missing_items", [])
-                    if flags_d:
-                        st.markdown("**Issues:**")
-                        for f2 in flags_d:
-                            st.markdown(f"- {f2}")
-                    if missing_d:
-                        st.markdown("**Missing:**")
-                        for m2 in missing_d:
-                            st.markdown(f"- {m2}")
-                    if not flags_d and not missing_d:
-                        st.success("No issues found.")
-                    ext_d = doc.get("extracted_text", "")
-                    if ext_d:
-                        with st.expander("Label text"):
-                            st.text(ext_d[:1500])
+        flags = findings.get("flags", [])
+        missing = findings.get("missing_items", [])
+        if flags:
+            st.markdown("**Issues flagged:**")
+            for fl in flags:
+                st.markdown(f"- {fl}")
+        if missing:
+            st.markdown("**Missing required items:**")
+            for mi in missing:
+                st.markdown(f"- {mi}")
+        ext_txt = findings.get("extracted_text", "")
+        if ext_txt:
+            with st.expander("View extracted label text"):
+                st.text(ext_txt[:2000])
 
-        # ── HSA Limits Reference ─────────────────────────────────────────────
-        st.divider()
-        st.markdown("#### 📊 HSA Limits Reference")
-        st.caption("From TCM Registration Excel — Limit sheet. Use when reviewing lab test reports (checklist item 6).")
+    # ── Step 4: HSA Submission Tracker ───────────────────────────────────────
+    st.divider()
+    st.markdown("#### Step 4 — HSA Submission Checklist Tracker")
+    st.caption(
+        "17-item checklist from TCM Registration Excel. "
+        "Tick off as you receive each document from the vendor."
+    )
 
-        lim_tab1, lim_tab2, lim_tab3, lim_tab4 = st.tabs([
-            "⚗️ Heavy Metals", "🦠 Microbial", "🧪 DEG / EG", "💊 Vitamins & Minerals"
-        ])
+    chk_col1, chk_col2 = st.columns(2)
+    with chk_col1:
+        is_oral_liquid = st.checkbox("Oral liquid product (requires DEG/EG test — item 7)", key="vr_oral")
+    with chk_col2:
+        has_fermented = st.checkbox("Contains fermented ingredient (requires CPMF11-5 — item 16)", key="vr_ferm")
 
-        def _limits_table(rows_html, headers):
-            ths = "".join(
-                f"<th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;"
-                f"text-align:left'>{h}</th>" for h in headers
+    checklist_status = vr.get_checklist_status(vr_pid)
+    done_count = 0
+    total_required = 0
+    categories = list(dict.fromkeys(c["category"] for c in vr.SUBMISSION_CHECKLIST))
+
+    for cat in categories:
+        st.markdown(f"**{cat}**")
+        for item in [c for c in vr.SUBMISSION_CHECKLIST if c["category"] == cat]:
+            if item["mandatory"] == "Conditional":
+                if item["id"] == 7 and not is_oral_liquid:
+                    continue
+                if item["id"] == 16 and not has_fermented:
+                    continue
+
+            total_required += 1
+            cur = checklist_status.get(item["id"], {})
+            cur_status = cur.get("status", "PENDING")
+            if cur_status == "DONE":
+                done_count += 1
+
+            form_ref = item.get("form", "—")
+            form_tag = (
+                f"<span style='font-size:10px;color:#7ec8e3;border:1px solid #2d5a7e;"
+                f"border-radius:3px;padding:1px 5px;margin-right:5px'>{form_ref}</span>"
+                if form_ref and form_ref != "—" else ""
             )
-            return (
-                f"<table style='width:100%;border-collapse:collapse;font-size:13px'>"
-                f"<tr>{ths}</tr>{rows_html}</table>"
+            cond_tag = (
+                "<span style='font-size:10px;color:#6b8ba4;border:1px solid #2d4a6a;"
+                "border-radius:3px;padding:1px 5px;margin-right:5px'>COND</span>"
+                if item["mandatory"] == "Conditional" else ""
             )
+            status_html = {
+                "DONE":    "<span style='color:#22c55e;font-weight:700'>✅ Done</span>",
+                "ISSUES":  "<span style='color:#ef4444;font-weight:700'>❌ Issues</span>",
+                "PENDING": "<span style='color:#f59e0b;font-weight:700'>⏳ Pending</span>",
+            }.get(cur_status, "<span style='color:#f59e0b;font-weight:700'>⏳ Pending</span>")
 
-        with lim_tab1:
-            hm_rows = "".join(
-                f"<tr style='border-bottom:1px solid #1e3a52'>"
-                f"<td style='color:#c9d8e8;padding:5px 12px'>{k}</td>"
-                f"<td style='color:#22c55e;font-weight:700;padding:5px 12px'>"
-                f"{v['operator']} {v['limit']} {v['unit']}</td>"
-                f"<td style='color:#6b8ba4;font-size:11px;padding:5px 12px'>"
-                f"{v.get('note','')}</td></tr>"
-                for k, v in vr.HEAVY_METAL_LIMITS.items()
-            )
-            st.markdown(
-                _limits_table(hm_rows, ["Heavy Metal", "HSA Limit", "Notes"]),
-                unsafe_allow_html=True
-            )
-
-        with lim_tab2:
-            mc_html = "<table style='width:100%;border-collapse:collapse;font-size:13px'>"
-            mc_html += "<tr><th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>Micro-organism</th>"
-            mc_html += "<th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>Limit</th>"
-            mc_html += "<th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>Unit</th></tr>"
-            for k, v in vr.MICROBIAL_LIMITS.items():
-                mc_html += (
-                    "<tr style='border-bottom:1px solid #1e3a52'>"
-                    "<td style='color:#c9d8e8;padding:5px 12px'>" + k + "</td>"
-                    "<td style='color:#22c55e;font-weight:700;padding:5px 12px'>" + str(v["limit"]) + "</td>"
-                    "<td style='color:#6b8ba4;font-size:11px;padding:5px 12px'>" + str(v["unit"]) + "</td></tr>"
+            c_item, c_stat, c_act = st.columns([5, 1, 1])
+            with c_item:
+                st.markdown(
+                    f"<div style='line-height:1.5'>{cond_tag}{form_tag}"
+                    f"<span style='font-size:13px;color:#c9d8e8'><b>{item['id']}.</b> {item['item']}</span>"
+                    f"<br><span style='font-size:11px;color:#6b8ba4;padding-left:4px'>{item.get('remarks','')}</span></div>",
+                    unsafe_allow_html=True
                 )
-            mc_html += "</table>"
-            st.markdown(mc_html, unsafe_allow_html=True)
-
-        with lim_tab3:
-            deg_html = "<table style='width:100%;border-collapse:collapse;font-size:13px'>"
-            deg_html += "<tr><th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>Parameter</th>"
-            deg_html += "<th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>HSA Limit</th>"
-            deg_html += "<th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>Notes</th></tr>"
-            for k, v in vr.DEG_EG_LIMITS.items():
-                deg_html += (
-                    "<tr style='border-bottom:1px solid #1e3a52'>"
-                    "<td style='color:#c9d8e8;padding:5px 12px'>" + k + "</td>"
-                    "<td style='color:#22c55e;font-weight:700;padding:5px 12px'>" + v["operator"] + " " + str(v["limit"]) + " " + v["unit"] + "</td>"
-                    "<td style='color:#6b8ba4;font-size:11px;padding:5px 12px'>" + v.get("note", "") + "</td></tr>"
+            with c_stat:
+                st.markdown(status_html, unsafe_allow_html=True)
+            with c_act:
+                opts = ["PENDING", "DONE", "ISSUES"]
+                idx_s = opts.index(cur_status) if cur_status in opts else 0
+                new_s = st.selectbox(
+                    "Status", opts, index=idx_s,
+                    key=f"tr5_{vr_pid}_{item['id']}",
+                    label_visibility="collapsed"
                 )
-            deg_html += "</table>"
-            st.markdown(deg_html, unsafe_allow_html=True)
-            st.info("DEG/EG testing required only for oral liquid products (checklist item 7).")
+                if new_s != cur_status:
+                    vr.upsert_checklist_status(vr_pid, item["id"], new_s)
+                    st.rerun()
+        st.markdown("---")
 
-        with lim_tab4:
-            vm_html = "<table style='width:100%;border-collapse:collapse;font-size:13px'>"
-            vm_html += "<tr><th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>Nutrient</th>"
-            vm_html += "<th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>Maximum Daily Limit</th></tr>"
-            for k, v in vr.VITAMIN_MINERAL_LIMITS.items():
-                vm_html += (
-                    "<tr style='border-bottom:1px solid #1e3a52'>"
-                    "<td style='color:#c9d8e8;padding:5px 12px'>" + k + "</td>"
-                    "<td style='color:#22c55e;font-weight:700;padding:5px 12px'>" + str(v) + "</td></tr>"
-                )
-            vm_html += "</table>"
-            st.markdown(vm_html, unsafe_allow_html=True)
-            st.caption("* Iron 15 mg/day; 30 mg/day may be considered for multivitamin supplements for pregnant women.")
+    pct = int(done_count / total_required * 100) if total_required else 0
+    pct_c = "#22c55e" if pct == 100 else "#f59e0b" if pct >= 50 else "#ef4444"
+    ready = (
+        "<div style='color:#22c55e;font-weight:700;margin-top:6px'>"
+        "🎉 All items complete — ready to submit via HSA PRISM!</div>"
+        if pct == 100 else ""
+    )
+    st.markdown(
+        f'<div style="background:#162334;border:1px solid #2d4a6a;border-radius:10px;'
+        f'padding:16px 20px;text-align:center;margin-top:8px">'
+        f'<div style="font-size:32px;font-weight:800;color:{pct_c}">{pct}%</div>'
+        f'<div style="color:#8aa5bf;font-size:14px">{done_count} of {total_required} items complete</div>'
+        f'{ready}</div>',
+        unsafe_allow_html=True
+    )
+
+    # ── Step 5: Previously Reviewed Documents ────────────────────────────────
+    st.divider()
+    st.markdown("#### Previously Reviewed Documents")
+    prev_docs = vr.get_vendor_docs(vr_pid)
+    if not prev_docs:
+        st.info("No documents reviewed yet for this product.")
+    else:
+        for doc in prev_docs:
+            od = doc.get("overall", "PENDING")
+            ic2 = {"PASS": "✅", "FAIL": "❌", "INCOMPLETE": "⚠️"}.get(od, "⏳")
+            ld = vr.LABEL_TYPES.get(doc.get("doc_type", ""), doc.get("doc_type", ""))
+            with st.expander(f"{ic2} {ld} — {doc.get('filename', '')} — {doc.get('created_at', '')[:16]}"):
+                try:
+                    fd = json.loads(doc.get("ai_findings", "{}") or "{}")
+                except Exception:
+                    fd = {}
+                for fl2 in fd.get("flags", []):
+                    st.markdown(f"- ⚠️ {fl2}")
+                for mi2 in fd.get("missing_items", []):
+                    st.markdown(f"- ❌ Missing: {mi2}")
+                if not fd.get("flags") and not fd.get("missing_items"):
+                    st.success("No issues found.")
+                et2 = doc.get("extracted_text", "")
+                if et2:
+                    with st.expander("Label text"):
+                        st.text(et2[:1500])
+
+    # ── HSA Limits Reference ─────────────────────────────────────────────────
+    st.divider()
+    st.markdown("#### 📊 HSA Limits Reference")
+    st.caption("From TCM Registration Excel — Limit sheet. Cross-check lab reports against these values.")
+
+    lim_t1, lim_t2, lim_t3, lim_t4 = st.tabs([
+        "⚗️ Heavy Metals", "🦠 Microbial", "🧪 DEG / EG", "💊 Vitamins & Minerals"
+    ])
+
+    def _tbl(rows_html, headers):
+        ths = "".join(
+            "<th style='color:#7ec8e3;padding:6px 12px;border-bottom:2px solid #2d4a6a;text-align:left'>"
+            + h + "</th>" for h in headers
+        )
+        return "<table style='width:100%;border-collapse:collapse;font-size:13px'><tr>" + ths + "</tr>" + rows_html + "</table>"
+
+    with lim_t1:
+        r = "".join(
+            "<tr style='border-bottom:1px solid #1e3a52'>"
+            "<td style='color:#c9d8e8;padding:5px 12px'>" + k + "</td>"
+            "<td style='color:#22c55e;font-weight:700;padding:5px 12px'>" + v["operator"] + " " + str(v["limit"]) + " " + v["unit"] + "</td>"
+            "<td style='color:#6b8ba4;font-size:11px;padding:5px 12px'>" + v.get("note", "") + "</td></tr>"
+            for k, v in vr.HEAVY_METAL_LIMITS.items()
+        )
+        st.markdown(_tbl(r, ["Heavy Metal", "HSA Limit", "Notes"]), unsafe_allow_html=True)
+
+    with lim_t2:
+        r = "".join(
+            "<tr style='border-bottom:1px solid #1e3a52'>"
+            "<td style='color:#c9d8e8;padding:5px 12px'>" + k + "</td>"
+            "<td style='color:#22c55e;font-weight:700;padding:5px 12px'>" + str(v["limit"]) + "</td>"
+            "<td style='color:#6b8ba4;font-size:11px;padding:5px 12px'>" + v["unit"] + "</td></tr>"
+            for k, v in vr.MICROBIAL_LIMITS.items()
+        )
+        st.markdown(_tbl(r, ["Micro-organism", "Limit", "Unit"]), unsafe_allow_html=True)
+
+    with lim_t3:
+        r = "".join(
+            "<tr style='border-bottom:1px solid #1e3a52'>"
+            "<td style='color:#c9d8e8;padding:5px 12px'>" + k + "</td>"
+            "<td style='color:#22c55e;font-weight:700;padding:5px 12px'>" + v["operator"] + " " + str(v["limit"]) + " " + v["unit"] + "</td>"
+            "<td style='color:#6b8ba4;font-size:11px;padding:5px 12px'>" + v.get("note", "") + "</td></tr>"
+            for k, v in vr.DEG_EG_LIMITS.items()
+        )
+        st.markdown(_tbl(r, ["Parameter", "HSA Limit", "Notes"]), unsafe_allow_html=True)
+        st.info("Required only for oral liquid products (checklist item 7).")
+
+    with lim_t4:
+        r = "".join(
+            "<tr style='border-bottom:1px solid #1e3a52'>"
+            "<td style='color:#c9d8e8;padding:5px 12px'>" + k + "</td>"
+            "<td style='color:#22c55e;font-weight:700;padding:5px 12px'>" + str(v) + "</td></tr>"
+            for k, v in vr.VITAMIN_MINERAL_LIMITS.items()
+        )
+        st.markdown(_tbl(r, ["Nutrient", "Maximum Daily Limit"]), unsafe_allow_html=True)
+        st.caption("* Iron 15 mg/day; 30 mg/day may apply for pregnant women multivitamin supplements.")

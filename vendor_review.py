@@ -254,8 +254,29 @@ def _conn():
 
 
 def init_vendor_tables():
-    """Create vendor review tables if they don't exist."""
+    """Create vendor review tables if they don't exist.
+    Also ensures the core formulations table exists so get_all_product_names()
+    never fails with 'no such table' even on a fresh database.
+    """
     with _conn() as con:
+        # Ensure core formulations table exists (created by database.py init_db,
+        # but guard here in case init order changes on Streamlit Cloud)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS formulations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL DEFAULT '',
+                session_name TEXT,
+                product_name_en TEXT,
+                product_name_zh TEXT,
+                formula_json TEXT,
+                rationale TEXT,
+                safety_json TEXT,
+                evidence TEXT,
+                commercial_json TEXT,
+                dosage TEXT,
+                starred INTEGER DEFAULT 0
+            )
+        """)
         con.execute("""
             CREATE TABLE IF NOT EXISTS vendor_docs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -619,16 +640,13 @@ def build_compliance_rows(label_type: str, findings: dict) -> list:
     """Build a list of {field, status, note} dicts for display in the compliance panel."""
     rows = []
     for field, label in _FIELD_LABELS.items():
-        val = findings.get(field)
-        # Fields that only apply to origin labels
         if field == "reflects_actual_retail_label" and not label_type.startswith("origin"):
             rows.append({"field": label, "status": "N/A", "note": "Origin labels only"})
             continue
-        # Pinyin check only applies to SG labels
         if field == "english_only" and label_type.startswith("origin"):
             rows.append({"field": label, "status": "N/A", "note": "SG labels only"})
             continue
-
+        val = findings.get(field)
         if val is True:
             status = "PASS"
         elif val is False:
