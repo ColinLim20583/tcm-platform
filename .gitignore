@@ -1,0 +1,29 @@
+# Secrets
+.env
+config_local.py
+
+# Large model files (too big for GitHub)
+models/
+runs/
+*.pt
+
+# Dataset (too large)
+shezhen_data/
+shezhen_datasets1.zip
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# DB (regenerated on first run)
+*.db

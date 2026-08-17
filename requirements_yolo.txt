@@ -1,0 +1,8 @@
+# YOLOv8 pipeline dependencies (install AFTER requirements.txt)
+# Run: pip install -r requirements_yolo.txt
+
+ultralytics>=8.0.0       # YOLOv8 — tongue feature detection
+torch>=2.0.0             # PyTorch (CPU works; GPU: install via https://pytorch.org)
+torchvision>=0.15.0      # Required by ultralytics
+# Optional: GPU training
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
