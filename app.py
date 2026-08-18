@@ -79,9 +79,6 @@ st.markdown("""
   .zone-cell .zone-label { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:.05em; }
   .zone-cell .zone-val { font-size:13px; color:#cbd5e1; margin-top:2px; }
 
-  /* Scrollable inputs (helps on mobile for long API keys) */
-  input[type="password"], input[type="text"] { overflow-x: auto !important; text-overflow: clip !important; }
-
   /* Buttons */
   .stButton > button { background:#1e3a4f; color:#7ec8e3; border:1px solid #2563eb44; border-radius:8px; }
   .stButton > button:hover { background:#2563eb; color:#fff; border-color:#2563eb; }
@@ -108,8 +105,13 @@ with st.sidebar:
     st.markdown(f"**{APP_TITLE}**  \n*v{VERSION}*")
     st.divider()
 
-    api_key = st.text_input("🔑 Anthropic API Key", value=ANTHROPIC_API_KEY,
-                            type="password", help="Enter your Anthropic API key")
+    show_key = st.checkbox("👁 Show key (use on mobile)", value=False)
+    api_key = st.text_input(
+        "🔑 Anthropic API Key",
+        value=ANTHROPIC_API_KEY,
+        type="default" if show_key else "password",
+        help="Tick 'Show key' on mobile so you can see what you're typing"
+    )
     if not api_key:
         st.warning("⚠️ Add your API key to enable AI features")
 
