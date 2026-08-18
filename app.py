@@ -89,13 +89,27 @@ st.markdown("""
   .product-zh { font-size:16px; color:#64748b; margin-top:2px; }
   .section-label { font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:#64748b; margin-bottom:.3rem; }
 
-  /* Tabs */
+  /* Tabs — swipeable on mobile */
   [data-testid="stHorizontalBlock"] { gap:.5rem; }
-  .stTabs [data-baseweb="tab"] { background:#162435; color:#94a3b8; border-radius:8px 8px 0 0; }
+  .stTabs [data-baseweb="tab"] { background:#162435; color:#94a3b8; border-radius:8px 8px 0 0; white-space:nowrap; flex-shrink:0; }
   .stTabs [aria-selected="true"] { background:#1e3a4f !important; color:#7ec8e3 !important; }
-  .stTabs [data-baseweb="tab-list"] { position:sticky; top:3.5rem; z-index:999; background:#0f1923; padding:.4rem 0; }
+  .stTabs [data-baseweb="tab-list"] {
+    position:sticky; top:3.5rem; z-index:999; background:#0f1923; padding:.4rem 0;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    flex-wrap: nowrap !important;
+    display: flex !important;
+  }
+  .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
   header[data-testid="stHeader"] { display:none; }
   .block-container { padding-top: 1rem !important; }
+
+  /* Sidebar API key input — wider touch target on mobile */
+  [data-testid="stSidebar"] input {
+    font-size: 16px !important;
+    min-height: 44px !important;
+  }
 </style>
 """, unsafe_allow_html=True)
 
