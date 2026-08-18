@@ -768,32 +768,55 @@ with tab_vision:
             for item in guide["avoid"]:
                 st.markdown(f"❌ {item}")
 
-        # Camera input — works on desktop webcam AND mobile phone camera
-        st.markdown("#### 📸 Capture Image")
-        st.caption("On mobile: tap to open your phone camera. On desktop: uses webcam.")
-        camera_image = st.camera_input(
-            label="Point camera at tongue / face and capture",
-            help="Works on desktop (webcam) and mobile phone (front or rear camera)"
-        )
+        # Capture state. Held in session so the camera widget can be swapped out
+        # once we have an image — otherwise st.camera_input keeps its own preview
+        # on screen and the photo ends up displayed twice.
+        if "cap_bytes" not in st.session_state:
+            st.session_state.cap_bytes = None
+            st.session_state.cap_label = ""
+            st.session_state.cap_nonce = 0   # bumped to reset the widgets on retake
 
-        # Alternative: file upload
-        st.markdown("*— or —*")
-        uploaded_file = st.file_uploader(
-            "Upload a photo instead",
-            type=["jpg", "jpeg", "png", "webp"],
-            help="Upload an existing photo of your tongue or face"
-        )
+        if st.session_state.cap_bytes is None:
+            # Camera input — works on desktop webcam AND mobile phone camera
+            st.markdown("#### 📸 Capture Image")
+            st.caption("On mobile: tap to open your phone camera. On desktop: uses webcam.")
+            camera_image = st.camera_input(
+                label="Point camera at tongue / face and capture",
+                key=f"cam_{st.session_state.cap_nonce}",
+                help="Works on desktop (webcam) and mobile phone (front or rear camera)"
+            )
+
+            # Alternative: file upload
+            st.markdown("*— or —*")
+            uploaded_file = st.file_uploader(
+                "Upload a photo instead",
+                type=["jpg", "jpeg", "png", "webp"],
+                key=f"up_{st.session_state.cap_nonce}",
+                help="Upload an existing photo of your tongue or face"
+            )
+
+            if camera_image is not None:
+                st.session_state.cap_bytes = camera_image.getvalue()
+                st.session_state.cap_label = "Captured image"
+                st.rerun()
+            elif uploaded_file is not None:
+                st.session_state.cap_bytes = uploaded_file.read()
+                st.session_state.cap_label = "Uploaded image"
+                st.rerun()
+        else:
+            st.success(f"✓ {st.session_state.cap_label} ready — review it on the right, then run the analysis.")
+            if st.button("🔄 Retake / choose another photo", use_container_width=True):
+                st.session_state.cap_bytes = None
+                st.session_state.cap_label = ""
+                st.session_state.cap_nonce += 1
+                st.rerun()
 
     with col_right:
         st.markdown("### 🔍 Analysis Results")
 
-        image_bytes = None
-        if camera_image is not None:
-            image_bytes = camera_image.getvalue()
-            st.image(camera_image, caption="Captured image", use_container_width=True)
-        elif uploaded_file is not None:
-            image_bytes = uploaded_file.read()
-            st.image(image_bytes, caption="Uploaded image", use_container_width=True)
+        image_bytes = st.session_state.cap_bytes
+        if image_bytes:
+            st.image(image_bytes, caption=st.session_state.cap_label, use_container_width=True)
 
         if image_bytes:
             if not vitals_confirmed:
