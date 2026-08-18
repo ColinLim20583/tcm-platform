@@ -103,11 +103,40 @@ st.markdown("""
     display: flex !important;
   }
   .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
-  /* Hide the Fork/GitHub/deploy bar entirely */
-  header[data-testid="stHeader"] { display:none !important; }
-  /* Keep the sidebar hamburger button accessible on mobile */
-  [data-testid="stSidebarCollapsedControl"] { display:block !important; position:fixed !important; top:.5rem !important; left:.5rem !important; z-index:999999 !important; }
-  .block-container { padding-top: 1rem !important; }
+  /* Hide the Fork/GitHub/deploy bar — but NOT the header itself. The sidebar
+     toggle button is a child of the header, so display:none on the header
+     takes the toggle with it and no child rule can bring it back. */
+  header[data-testid="stHeader"] {
+    background: transparent !important;
+    height: 0 !important;
+    min-height: 0 !important;
+  }
+  [data-testid="stToolbar"],
+  [data-testid="stDecoration"],
+  [data-testid="stStatusWidget"] { display: none !important; }
+
+  /* Sidebar toggle — testid has changed across Streamlit versions, so target
+     all of them rather than betting on one. */
+  [data-testid="stSidebarCollapsedControl"],
+  [data-testid="stExpandSidebarButton"],
+  [data-testid="stSidebarCollapseButton"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: fixed !important;
+    top: .5rem !important;
+    left: .5rem !important;
+    z-index: 999999 !important;
+  }
+  /* Make it obvious against the dark background */
+  [data-testid="stSidebarCollapsedControl"] button,
+  [data-testid="stExpandSidebarButton"] button {
+    background: #16283a !important;
+    border: 1px solid #2c4f6b !important;
+    border-radius: 8px !important;
+    color: #7ec8e3 !important;
+  }
+  .block-container { padding-top: 2.5rem !important; }
 
   /* Sidebar API key input — wider touch target on mobile */
   [data-testid="stSidebar"] input {
