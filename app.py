@@ -884,6 +884,15 @@ with tab_vision:
                                 vitals=vitals,
                                 require_yolo=strict_yolo,
                             )
+
+                            # A parse failure returns a dict rather than raising.
+                            # Surface it instead of saving an empty diagnosis.
+                            if diag.get("error"):
+                                st.error(f"Analysis failed: {diag['error']}")
+                                with st.expander("Raw model response"):
+                                    st.code(diag.get("raw", "(none captured)"))
+                                st.stop()
+
                             st.session_state["last_vision_result"] = diag
                             st.session_state["vision_condition"] = diag.get("suggested_condition_input", "")
                             st.session_state["vision_pattern"] = diag.get("suggested_tcm_pattern", "")

@@ -17,7 +17,109 @@ import anthropic
 import base64
 import json
 import io
+import re
 from PIL import Image, ImageEnhance, ImageFilter
+
+
+# ─── Robust JSON extraction ──────────────────────────────────────────────────
+
+def _extract_json_block(raw: str) -> str:
+    """
+    Pull the outermost JSON object out of a model response.
+
+    Naively taking everything between the first '{' and the last '}' breaks as
+    soon as a brace appears inside a string value, or the model adds a closing
+    remark after the JSON. This walks the text tracking string/escape state so
+    braces inside strings are ignored.
+    """
+    text = raw.strip()
+
+    # Strip ```json ... ``` fences if present
+    fence = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+
+    start = text.find("{")
+    if start == -1:
+        return ""
+
+    depth = 0
+    in_string = False
+    escaped = False
+
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+
+    # Unbalanced — response was probably truncated mid-object
+    return text[start:]
+
+
+def _repair_json(block: str) -> str:
+    """Fix the malformations models actually produce, in increasing severity."""
+    # Trailing commas before a close
+    block = re.sub(r",(\s*[}\]])", r"\1", block)
+    # Literal newlines/tabs inside string values (invalid per JSON spec)
+    out, in_string, escaped = [], False, False
+    for ch in block:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            if ch == "\n":
+                out.append("\\n")
+                continue
+            if ch == "\t":
+                out.append("\\t")
+                continue
+        elif ch == '"':
+            in_string = True
+        out.append(ch)
+    return "".join(out)
+
+
+def parse_model_json(raw: str) -> tuple[dict | None, str]:
+    """
+    Return (parsed_dict, error_message). On failure the error message includes
+    the offending text so the problem is diagnosable rather than just a
+    character offset.
+    """
+    block = _extract_json_block(raw)
+    if not block:
+        return None, "No JSON object found in the response."
+
+    for candidate in (block, _repair_json(block)):
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed, ""
+        except json.JSONDecodeError as e:
+            last_error = e
+
+    # Give back the failing region rather than a bare offset
+    pos = getattr(last_error, "pos", 0)
+    snippet = block[max(0, pos - 120):pos + 120].replace("\n", " ")
+    truncated = not block.rstrip().endswith("}")
+    reason = "response appears truncated" if truncated else "malformed JSON"
+    return None, f"{reason}: {last_error.msg} near: ...{snippet}..."
 
 
 # ─── Image pre-processing ────────────────────────────────────────────────────
@@ -488,7 +590,7 @@ def analyze_tcm_visual(image_bytes: bytes, scan_focus: str, api_key: str) -> dic
 
     response = client.messages.create(
         model="claude-sonnet-4-5",
-        max_tokens=3000,
+        max_tokens=4000,
         system=VISION_SYSTEM_PROMPT,
         messages=[{
             "role": "user",
@@ -507,17 +609,15 @@ def analyze_tcm_visual(image_bytes: bytes, scan_focus: str, api_key: str) -> dic
     )
 
     raw = response.content[0].text.strip()
-    start = raw.find('{')
-    end = raw.rfind('}') + 1
-    if start == -1 or end == 0:
+    result, parse_error = parse_model_json(raw)
+    if result is None:
         return {
-            "error": "Could not parse vision response",
+            "error": f"Could not parse vision response — {parse_error}",
             "raw": raw,
             "confidence_overall": 0,
             "disclaimer": "Analysis failed. Please retake the image with better lighting."
         }
 
-    result = json.loads(raw[start:end])
     return calibrate_confidence(result)
 
 
@@ -749,7 +849,7 @@ def analyze_with_yolo_pipeline(
 
     response = client.messages.create(
         model="claude-sonnet-4-5",
-        max_tokens=3000,
+        max_tokens=4000,
         system=VISION_SYSTEM_PROMPT,
         messages=[{
             "role": "user",
@@ -768,17 +868,16 @@ def analyze_with_yolo_pipeline(
     )
 
     raw = response.content[0].text.strip()
-    start = raw.find('{')
-    end = raw.rfind('}') + 1
-    if start == -1 or end == 0:
+    parsed, parse_error = parse_model_json(raw)
+    if parsed is None:
         result = {
-            "error": "Could not parse vision response",
+            "error": f"Could not parse vision response — {parse_error}",
             "raw": raw,
             "confidence_overall": 0,
             "disclaimer": "Analysis failed. Please retake the image with better lighting."
         }
     else:
-        result = calibrate_confidence(json.loads(raw[start:end]))
+        result = calibrate_confidence(parsed)
 
     # ── Step 3: Merge YOLO metadata into result ───────────────────────────────
     result["yolo_available"] = yolo_result.get("yolo_available", False)
