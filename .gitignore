@@ -2,14 +2,17 @@
 .env
 config_local.py
 
-# Large model files (too big for GitHub)
-models/
+# Training artifacts (large, regenerable)
 runs/
-*.pt
 
-# Dataset (too large)
+# Dataset (too large for GitHub — keep local / in Drive)
 shezhen_data/
 shezhen_datasets1.zip
+
+# Trained models ARE tracked (tongue_yolo_best.pt is ~6MB, well under the 100MB limit).
+# Exclude only oversized checkpoints:
+models/*_last.pt
+models/epoch*.pt
 
 # Python
 __pycache__/

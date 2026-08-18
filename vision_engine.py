@@ -143,13 +143,51 @@ CONSTITUTION_TYPES = """
   9. 特禀质 (Allergic) → Sensitive, prone to allergies, weak immune response
 """
 
-VISION_SYSTEM_PROMPT = f"""You are ChemiGranVision — an expert TCM visual diagnostic AI integrated into Chemigran Pte Ltd's formulation platform.
+NORMAL_BASELINE = """
+NORMAL / HEALTHY BASELINE (正常舌象面象) — READ THIS FIRST:
 
-Your role is to perform evidence-informed visual diagnosis using classical TCM observation methods (望诊 Wàng Zhěn), trained on:
-- Published clinical tongue image datasets (UTDID, ZSATD, open medical image corpora)
-- Classical TCM facial diagnosis texts and modern clinical validation studies
-- Wang Qi's 9-Constitution framework (中医体质学)
-- Singapore HSA-compliant health assessment guidelines
+A HEALTHY adult tongue looks like this. This is the MOST COMMON presentation:
+  - Pale red / pink body (淡红舌) — the normal colour
+  - Thin white coating (薄白苔) — a thin white film is NORMAL, not pathological
+  - Normal size, moist but not wet
+  - Slight indentations at the edges are COMMON in healthy people and are
+    only diagnostically meaningful when DEEP, PRONOUNCED and paired with
+    a genuinely swollen, pale body
+
+A HEALTHY adult face looks like this:
+  - Even complexion with visible lustre (有神)
+  - Slight natural variation in tone across zones is NORMAL
+  - Clear eyes
+
+CRITICAL CALIBRATION — COMMON FALSE POSITIVES:
+  ✗ Thin white coating is NORMAL. Do NOT call it "Phlegm-Damp" unless the
+    coating is genuinely THICK, GREASY and obscures the tongue body beneath.
+  ✗ Mild scalloping at tongue edges occurs in a large fraction of healthy
+    adults. Do NOT diagnose "Spleen Qi Deficiency" from this alone.
+  ✗ Phone cameras wash out colour and add warm/yellow cast. A slightly
+    sallow-looking face is usually LIGHTING, not Spleen deficiency.
+  ✗ A tongue extended hard for a photo naturally appears wider and flatter.
+    Do NOT read this as a "swollen" (胖大) tongue.
+  ✗ Shadows under the eyes from overhead light are NOT dark circles.
+
+BASE RATES — you must respect these:
+  In a general adult population being casually photographed:
+    ~35-45% are 平和质 Balanced Constitution — NO significant pattern
+    ~20% show mild Qi deficiency signs
+    ~15% show mild Damp signs
+    the remainder spread across the other constitutions
+  If you diagnose "Spleen Qi Deficiency with Phlegm-Damp" for the majority
+  of images you see, you are WRONG. That pattern requires a genuinely
+  swollen pale body AND thick greasy coating AND deep teeth marks together.
+"""
+
+VISION_SYSTEM_PROMPT = f"""You are ChemiGranVision — a TCM visual assessment AI integrated into Chemigran Pte Ltd's formulation platform.
+
+You perform structured observation (望诊 Wàng Zhěn) on photographs. You are a
+careful, conservative observer — closer to a radiologist writing a report than
+a practitioner eager to find a pattern.
+
+{NORMAL_BASELINE}
 
 REFERENCE KNOWLEDGE:
 {TONGUE_REFERENCE}
@@ -158,15 +196,266 @@ REFERENCE KNOWLEDGE:
 
 {CONSTITUTION_TYPES}
 
-RULES:
-- Analyse ONLY what is visible in the image — never fabricate findings
-- Provide confidence scores (0–100) for each pattern identified
-- Always include a clinical disclaimer
-- Output must be valid JSON matching the requested schema exactly
-- Flag poor image quality clearly rather than guessing
-- Cross-reference tongue AND face findings for pattern confirmation
-- Suggest the most likely TCM pattern(s) with supporting visual evidence
+MANDATORY RULES:
+
+1. DESCRIBE BEFORE YOU DIAGNOSE.
+   First record what you literally see — colours, textures, shapes. Only then
+   map observations to patterns. Never start from a pattern and look for
+   evidence to support it.
+
+2. "BALANCED CONSTITUTION" IS A VALID AND COMMON ANSWER.
+   If the tongue is pale red with a thin white coating and the face has even
+   tone and lustre, the correct answer is 平和质 (Balanced Constitution) with
+   primary_pattern "No significant pattern — Balanced". This is expected for
+   roughly 4 in 10 people. Do not manufacture pathology.
+
+3. EVERY PATTERN MUST CITE SPECIFIC VISIBLE EVIDENCE.
+   Each entry in tcm_patterns must list concrete observations you actually saw
+   in supporting_indicators. If you cannot name at least TWO specific visual
+   findings, do not report the pattern.
+
+4. RECORD CONTRADICTING EVIDENCE HONESTLY.
+   Fill contradicting_indicators whenever a finding argues against the pattern.
+   An empty contradicting list on every pattern is a sign you are not looking.
+
+5. CONFIDENCE MUST BE EARNED — DEFAULT LOW.
+   85-95: multiple unambiguous findings, excellent image quality
+   65-84 : clear findings, good image
+   40-64 : suggestive but ambiguous, or mediocre image quality
+   below 40: poor image, obscured view, or genuinely uncertain
+   Most casual phone photos in ordinary lighting should land in the 40-70 band.
+   A confidence above 85 requires you to justify it in clinical_notes.
+
+6. IMAGE QUALITY CAPS CONFIDENCE.
+   If lighting is warm/yellow, the tongue is partly obscured, the image is
+   blurry, or colour is unreliable, say so in image_quality_notes AND cap
+   confidence_overall at 55. Colour-dependent patterns (Heat, Cold, Blood
+   stasis) cannot be assessed reliably under coloured lighting — say so.
+
+7. NEVER FABRICATE. If the tongue is not visible, set tongue_visible false and
+   leave tongue fields as "Not assessable". Same for the face. Do not infer
+   tongue findings from a face-only photo or vice versa.
+
+8. NO MEDICAL CLAIMS. This is a wellness screening tool, not a diagnosis.
+   Output must be valid JSON matching the requested schema exactly.
 """
+
+
+# ─── Confidence calibration (enforced in code, not left to the LLM) ──────────
+
+def calibrate_confidence(result: dict) -> dict:
+    """
+    Apply hard confidence caps based on evidence quality.
+
+    The LLM cannot be trusted to limit its own confidence, so we enforce
+    ceilings here based on measurable properties of the response:
+      - poor/fair image quality
+      - unreliable colour assessment
+      - patterns with too few cited indicators
+      - patterns whose evidence_strength is self-declared weak
+
+    Also drops patterns that fail the minimum-evidence bar entirely.
+    """
+    quality = str(result.get("image_quality", "")).lower()
+    color_ok = result.get("color_assessment_reliable", True)
+
+    # ── Determine the ceiling ─────────────────────────────────────────────────
+    ceiling = 100
+    caps = []
+
+    if quality == "poor":
+        ceiling = min(ceiling, 40)
+        caps.append("poor image quality")
+    elif quality == "fair":
+        ceiling = min(ceiling, 65)
+        caps.append("fair image quality")
+
+    if color_ok is False:
+        ceiling = min(ceiling, 55)
+        caps.append("colour unreliable under this lighting")
+
+    # ── Filter and calibrate individual patterns ─────────────────────────────
+    patterns = result.get("tcm_patterns", []) or []
+    kept = []
+    for p in patterns:
+        support = p.get("supporting_indicators", []) or []
+        strength = str(p.get("evidence_strength", "moderate")).lower()
+        conf = p.get("confidence", 50)
+        try:
+            conf = float(conf)
+        except (TypeError, ValueError):
+            conf = 50.0
+
+        is_balanced = "balanced" in str(p.get("pattern_en", "")).lower() \
+            or "no significant" in str(p.get("pattern_en", "")).lower()
+
+        # Minimum-evidence bar: a pathological pattern needs >= 2 cited findings
+        if not is_balanced and len(support) < 2:
+            continue
+
+        # Evidence-strength ceilings
+        if strength == "weak":
+            conf = min(conf, 50)
+        elif strength == "moderate":
+            conf = min(conf, 75)
+
+        # Fewer cited findings => lower ceiling
+        if not is_balanced:
+            if len(support) == 2:
+                conf = min(conf, 70)
+            elif len(support) == 3:
+                conf = min(conf, 82)
+
+        # Contradicting evidence reduces confidence
+        contra = p.get("contradicting_indicators", []) or []
+        if contra:
+            conf = max(0, conf - 8 * len(contra))
+
+        p["confidence"] = int(round(min(conf, ceiling)))
+        kept.append(p)
+
+    # If every pattern was filtered out, the honest answer is "balanced"
+    if not kept:
+        kept = [{
+            "pattern_en": "No significant pattern — Balanced",
+            "pattern_zh": "平和质",
+            "confidence": min(60, ceiling),
+            "supporting_indicators": ["No findings outside normal limits were identified"],
+            "contradicting_indicators": [],
+            "evidence_strength": "moderate",
+        }]
+        result["primary_pattern"] = "No significant pattern — Balanced"
+        result["primary_pattern_zh"] = "平和质"
+        result["constitution_type"] = "Balanced (平和质)"
+        result["constitution_zh"] = "平和质"
+
+    kept.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+    result["tcm_patterns"] = kept
+
+    # ── Overall confidence: cannot exceed the top pattern or the ceiling ─────
+    overall = result.get("confidence_overall", 50)
+    try:
+        overall = float(overall)
+    except (TypeError, ValueError):
+        overall = 50.0
+
+    top = kept[0].get("confidence", 50) if kept else 50
+    result["confidence_overall"] = int(round(min(overall, ceiling, top)))
+
+    if caps:
+        result["confidence_capped_because"] = caps
+
+    return result
+
+
+# ─── Shared assessment prompt builder ────────────────────────────────────────
+
+def build_assessment_prompt(focus_instructions: str, yolo_section: str = "") -> str:
+    """
+    Build the calibrated TCM assessment prompt.
+    Used by both analyze_tcm_visual() and analyze_with_yolo_pipeline()
+    so both paths share identical anti-bias calibration.
+    """
+    return f"""Assess this image using TCM observation method. {focus_instructions}{yolo_section}
+
+WORK IN THIS ORDER:
+
+STEP 1 — RAW OBSERVATION. Before thinking about any TCM pattern, describe
+literally what you see: actual colours, actual textures, actual shapes. Put
+this in raw_observations.
+
+STEP 2 — COMPARE TO NORMAL. For each observation, decide whether it falls
+within the healthy baseline or genuinely deviates from it. Remember: pale-red
+body with thin white coating is NORMAL. Mild edge scalloping is NORMAL.
+
+STEP 3 — ONLY THEN assign patterns, and only for genuine deviations. If
+everything is within normal limits, report "No significant pattern — Balanced"
+and constitution 平和质. That is a correct and common result.
+
+Respond ONLY with a single valid JSON object matching this exact schema:
+
+{{
+  "raw_observations": [
+    "Literal description of what you see, e.g. 'tongue body is medium pink, slightly lighter at the tip'",
+    "e.g. 'thin translucent white film across the middle third, tongue surface visible beneath'",
+    "e.g. 'image has a warm colour cast from indoor incandescent lighting'"
+  ],
+  "deviations_from_normal": [
+    "Only findings that genuinely fall OUTSIDE the healthy baseline. Empty list is a valid and common answer."
+  ],
+  "image_quality": "good | fair | poor",
+  "image_quality_notes": "Note lighting colour cast, focus, angle, and what this makes unreliable",
+  "color_assessment_reliable": true,
+  "tongue_visible": true,
+  "face_visible": true,
+  "tongue": {{
+    "body_color": "Observed colour, or 'Not assessable' if not visible",
+    "coating_color": "Observed coating, or 'Not assessable'",
+    "coating_thickness": "None | Thin | Moderate | Thick | Not assessable",
+    "coating_texture": "Moist | Dry | Greasy | Peeled | Not assessable",
+    "shape": "Normal | Swollen | Thin | Cracked | Teeth-marked | Not assessable",
+    "moisture": "Dry | Normal | Moist | Excessively wet | Not assessable",
+    "special_features": ["Only genuinely notable features. Empty list if none."],
+    "within_normal_limits": true,
+    "findings_summary": "2-3 sentences. Say plainly if findings are normal."
+  }},
+  "face": {{
+    "overall_complexion": "Observed, or 'Not assessable'",
+    "lustre": "Bright | Dull | Normal | Not assessable",
+    "zone_findings": {{
+      "forehead": "State 'Normal' if unremarkable — do not invent findings",
+      "between_eyebrows": "Normal, or specific observed deviation",
+      "nose_bridge": "Normal, or specific observed deviation",
+      "nose_tip": "Normal, or specific observed deviation",
+      "cheeks": "Normal, or specific observed deviation",
+      "chin": "Normal, or specific observed deviation"
+    }},
+    "eyes": {{
+      "sclera": "White | Red | Yellow | Dull | Not assessable",
+      "lower_lids": "Normal | Dark circles | Puffy | Not assessable",
+      "overall": "Bright/Shen good | Dull/Shen poor | Normal | Not assessable"
+    }},
+    "skin_texture": "Observed, or 'Not assessable'",
+    "within_normal_limits": true,
+    "findings_summary": "2-3 sentences. Say plainly if findings are normal."
+  }},
+  "tcm_patterns": [
+    {{
+      "pattern_en": "Pattern name, or 'No significant pattern — Balanced'",
+      "pattern_zh": "中文名 or 平和质",
+      "confidence": 55,
+      "supporting_indicators": ["MUST list at least 2 specific things you actually saw"],
+      "contradicting_indicators": ["Findings that argue against this pattern — be honest"],
+      "evidence_strength": "strong | moderate | weak"
+    }}
+  ],
+  "primary_pattern": "Most likely pattern, or 'No significant pattern — Balanced'",
+  "primary_pattern_zh": "主证中文名 or 平和质",
+  "secondary_patterns": ["Only if genuinely present — empty list is fine"],
+  "constitution_type": "e.g. Balanced (平和质) / Qi Deficiency (气虚质)",
+  "constitution_zh": "平和质",
+  "affected_organs": ["Only organs with actual visual evidence — empty list if none"],
+  "pathogenic_factors": ["Only factors with actual visual evidence — empty list if none"],
+  "diagnosis_summary": "3-4 sentences. If the person appears healthy, say so clearly and do not pad with speculative pathology.",
+  "recommended_therapeutic_principles": ["For a balanced result, use general wellness maintenance principles"],
+  "recommended_focus_areas": ["General wellness if balanced"],
+  "suggested_condition_input": "Pre-fill text for formulation generator. If balanced, describe general wellness goals rather than symptoms.",
+  "suggested_tcm_pattern": "Pre-fill pattern, or 'Balanced constitution — general wellness'",
+  "suggested_demographic": "Brief demographic description",
+  "confidence_overall": 55,
+  "confidence_rationale": "One sentence explaining WHY this confidence level — reference image quality and evidence strength",
+  "limitations": ["What this photo could NOT tell you, e.g. 'Pulse and symptom history unavailable', 'Warm lighting makes colour assessment unreliable'"],
+  "clinical_notes": "Caveats. If confidence is above 85, justify it here.",
+  "disclaimer": "This visual assessment is a preliminary AI-assisted wellness screening tool based on traditional TCM observation theory. It is not a medical diagnosis and cannot replace examination by a registered TCM practitioner, which includes pulse diagnosis, inquiry, and clinical history."
+}}
+
+REMINDERS BEFORE YOU ANSWER:
+- A healthy tongue with thin white coating is NORMAL. Report it as normal.
+- Do not diagnose Spleen Qi Deficiency / Phlegm-Damp unless you see a genuinely
+  swollen pale body AND thick greasy coating AND deep pronounced teeth marks.
+- Casual phone photos rarely justify confidence above 70.
+- Every pattern needs at least 2 specific cited observations or you must drop it.
+- Empty lists are honest answers. Padding with speculative findings is not."""
 
 
 # ─── Main analysis function ──────────────────────────────────────────────────
@@ -195,72 +484,7 @@ def analyze_tcm_visual(image_bytes: bytes, scan_focus: str, api_key: str) -> dic
         "full": "Perform COMPREHENSIVE analysis of BOTH tongue (if shown) and face. Cross-reference findings between tongue and face for higher-confidence pattern identification.",
     }.get(scan_focus, "Analyse all visible diagnostic indicators.")
 
-    prompt = f"""Analyse this image for TCM diagnostic indicators. {focus_instructions}
-
-Respond ONLY with a single valid JSON object matching this exact schema:
-
-{{
-  "image_quality": "good | fair | poor",
-  "image_quality_notes": "Brief note on lighting, focus, angle quality",
-  "tongue_visible": true,
-  "face_visible": true,
-  "tongue": {{
-    "body_color": "e.g. Pale red / Red / Pale white / Purple / Dark red",
-    "coating_color": "e.g. Thin white / Yellow greasy / No coating",
-    "coating_thickness": "None | Thin | Moderate | Thick",
-    "coating_texture": "e.g. Moist / Dry / Greasy / Peeled",
-    "shape": "e.g. Normal / Swollen / Thin / Cracked / Teeth-marked",
-    "moisture": "Dry | Normal | Moist | Excessively wet",
-    "special_features": ["e.g. cracks", "teeth marks", "red tip", "purple patches"],
-    "findings_summary": "2-3 sentence clinical summary of tongue findings"
-  }},
-  "face": {{
-    "overall_complexion": "e.g. Pale / Sallow / Ruddy / Dull / Flushed",
-    "lustre": "Bright | Dull | Normal",
-    "zone_findings": {{
-      "forehead": "Heart/SI assessment",
-      "between_eyebrows": "Lung assessment",
-      "nose_bridge": "Liver/GB assessment",
-      "nose_tip": "Spleen/ST assessment",
-      "cheeks": "Lung assessment",
-      "chin": "Kidney/BL assessment"
-    }},
-    "eyes": {{
-      "sclera": "White | Red | Yellow | Dull",
-      "lower_lids": "Normal | Dark circles | Puffy",
-      "overall": "Bright/Shen good | Dull/Shen poor | Normal"
-    }},
-    "skin_texture": "e.g. Dry / Oily / Normal / Puffy / Rough",
-    "findings_summary": "2-3 sentence clinical summary of face findings"
-  }},
-  "tcm_patterns": [
-    {{
-      "pattern_en": "e.g. Heart Blood Deficiency",
-      "pattern_zh": "心血虚",
-      "confidence": 85,
-      "supporting_indicators": ["pale tongue", "thin coating", "pale face", "dull eyes"],
-      "contradicting_indicators": []
-    }}
-  ],
-  "primary_pattern": "Most likely TCM pattern name in English",
-  "primary_pattern_zh": "主证中文名",
-  "secondary_patterns": ["Second pattern if present", "Third pattern if present"],
-  "constitution_type": "e.g. Qi Deficiency (气虚质)",
-  "constitution_zh": "气虚质",
-  "affected_organs": ["Heart", "Spleen"],
-  "pathogenic_factors": ["Qi deficiency", "Blood deficiency"],
-  "diagnosis_summary": "Comprehensive 3-4 sentence TCM diagnostic summary integrating all visual findings",
-  "recommended_therapeutic_principles": ["e.g. Nourish Heart Blood", "Calm the Shen", "Tonify Spleen Qi"],
-  "recommended_focus_areas": ["Sleep", "Stress"],
-  "suggested_condition_input": "Pre-filled text for condition/symptoms field in formulation generator",
-  "suggested_tcm_pattern": "Pre-filled TCM pattern for formulation generator",
-  "suggested_demographic": "e.g. Adults with Heart Blood deficiency and poor sleep",
-  "confidence_overall": 78,
-  "clinical_notes": "Any important clinical caveats or additional observations",
-  "disclaimer": "This visual assessment is a preliminary AI-assisted screening tool based on traditional TCM diagnostic theory. It does not constitute a medical diagnosis. Please consult a registered TCM practitioner for clinical evaluation."
-}}
-
-IMPORTANT: If image quality is poor or key diagnostic areas are not visible, set confidence_overall below 50 and explain in image_quality_notes. Never fabricate tongue or face findings if they are not clearly visible."""
+    prompt = build_assessment_prompt(focus_instructions)
 
     response = client.messages.create(
         model="claude-sonnet-4-5",
@@ -294,7 +518,7 @@ IMPORTANT: If image quality is poor or key diagnostic areas are not visible, set
         }
 
     result = json.loads(raw[start:end])
-    return result
+    return calibrate_confidence(result)
 
 
 # ─── Comparative pattern enrichment ─────────────────────────────────────────
@@ -478,72 +702,7 @@ def analyze_with_yolo_pipeline(
     if yolo_context:
         yolo_section = f"\n\nOBJECTIVE AI PRE-DETECTION (YOLOv8 trained on 19,585 tongue images):\n{yolo_context}\n\nPlease incorporate these objective detections into your analysis. They are the result of a specialised tongue-feature detector; treat them as a second clinical observer's findings.\n"
 
-    prompt = f"""Analyse this image for TCM diagnostic indicators. {focus_instructions}{yolo_section}
-
-Respond ONLY with a single valid JSON object matching this exact schema:
-
-{{
-  "image_quality": "good | fair | poor",
-  "image_quality_notes": "Brief note on lighting, focus, angle quality",
-  "tongue_visible": true,
-  "face_visible": true,
-  "tongue": {{
-    "body_color": "e.g. Pale red / Red / Pale white / Purple / Dark red",
-    "coating_color": "e.g. Thin white / Yellow greasy / No coating",
-    "coating_thickness": "None | Thin | Moderate | Thick",
-    "coating_texture": "e.g. Moist / Dry / Greasy / Peeled",
-    "shape": "e.g. Normal / Swollen / Thin / Cracked / Teeth-marked",
-    "moisture": "Dry | Normal | Moist | Excessively wet",
-    "special_features": ["e.g. cracks", "teeth marks", "red tip", "purple patches"],
-    "findings_summary": "2-3 sentence clinical summary of tongue findings"
-  }},
-  "face": {{
-    "overall_complexion": "e.g. Pale / Sallow / Ruddy / Dull / Flushed",
-    "lustre": "Bright | Dull | Normal",
-    "zone_findings": {{
-      "forehead": "Heart/SI assessment",
-      "between_eyebrows": "Lung assessment",
-      "nose_bridge": "Liver/GB assessment",
-      "nose_tip": "Spleen/ST assessment",
-      "cheeks": "Lung assessment",
-      "chin": "Kidney/BL assessment"
-    }},
-    "eyes": {{
-      "sclera": "White | Red | Yellow | Dull",
-      "lower_lids": "Normal | Dark circles | Puffy",
-      "overall": "Bright/Shen good | Dull/Shen poor | Normal"
-    }},
-    "skin_texture": "e.g. Dry / Oily / Normal / Puffy / Rough",
-    "findings_summary": "2-3 sentence clinical summary of face findings"
-  }},
-  "tcm_patterns": [
-    {{
-      "pattern_en": "e.g. Heart Blood Deficiency",
-      "pattern_zh": "心血虚",
-      "confidence": 85,
-      "supporting_indicators": ["pale tongue", "thin coating", "pale face", "dull eyes"],
-      "contradicting_indicators": []
-    }}
-  ],
-  "primary_pattern": "Most likely TCM pattern name in English",
-  "primary_pattern_zh": "主证中文名",
-  "secondary_patterns": ["Second pattern if present", "Third pattern if present"],
-  "constitution_type": "e.g. Qi Deficiency (气虚质)",
-  "constitution_zh": "气虚质",
-  "affected_organs": ["Heart", "Spleen"],
-  "pathogenic_factors": ["Qi deficiency", "Blood deficiency"],
-  "diagnosis_summary": "Comprehensive 3-4 sentence TCM diagnostic summary integrating all visual findings",
-  "recommended_therapeutic_principles": ["e.g. Nourish Heart Blood", "Calm the Shen", "Tonify Spleen Qi"],
-  "recommended_focus_areas": ["Sleep", "Stress"],
-  "suggested_condition_input": "Pre-filled text for condition/symptoms field in formulation generator",
-  "suggested_tcm_pattern": "Pre-filled TCM pattern for formulation generator",
-  "suggested_demographic": "e.g. Adults with Heart Blood deficiency and poor sleep",
-  "confidence_overall": 78,
-  "clinical_notes": "Any important clinical caveats or additional observations",
-  "disclaimer": "This visual assessment is a preliminary AI-assisted screening tool based on traditional TCM diagnostic theory. It does not constitute a medical diagnosis. Please consult a registered TCM practitioner for clinical evaluation."
-}}
-
-IMPORTANT: If image quality is poor or key diagnostic areas are not visible, set confidence_overall below 50 and explain in image_quality_notes. Never fabricate tongue or face findings if they are not clearly visible."""
+    prompt = build_assessment_prompt(focus_instructions, yolo_section)
 
     response = client.messages.create(
         model="claude-sonnet-4-5",
@@ -576,7 +735,7 @@ IMPORTANT: If image quality is poor or key diagnostic areas are not visible, set
             "disclaimer": "Analysis failed. Please retake the image with better lighting."
         }
     else:
-        result = json.loads(raw[start:end])
+        result = calibrate_confidence(json.loads(raw[start:end]))
 
     # ── Step 3: Merge YOLO metadata into result ───────────────────────────────
     result["yolo_available"] = yolo_result.get("yolo_available", False)

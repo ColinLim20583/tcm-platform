@@ -1,3 +1,6 @@
+# CPU-only PyTorch wheels — avoids pulling ~2GB of CUDA libs on Streamlit Cloud
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 anthropic>=0.30.0
 streamlit>=1.35.0
 pandas>=2.0.0
@@ -6,3 +9,8 @@ openpyxl>=3.1.0
 python-dotenv>=1.0.0
 Pillow>=10.0.0
 opencv-python-headless>=4.8.0
+
+# YOLOv8 tongue feature detection
+torch>=2.0.0
+torchvision>=0.15.0
+ultralytics>=8.0.0

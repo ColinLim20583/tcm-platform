@@ -340,6 +340,30 @@ def render_vision_results(diag: dict):
     face = diag.get("face", {})
     disclaimer = diag.get("disclaimer", "")
 
+    # ── Honest confidence banner ──────────────────────────────────────────────
+    is_balanced = ("balanced" in primary.lower()) or ("no significant" in primary.lower())
+    capped = diag.get("confidence_capped_because", [])
+
+    if is_balanced:
+        st.markdown(
+            '<div style="background:#052e16;border:1px solid #166534;border-radius:10px;'
+            'padding:.9rem 1.1rem;margin-bottom:1rem;color:#86efac;font-size:14px">'
+            '✅ <b>No significant TCM pattern detected — appears balanced (平和质)</b><br>'
+            '<span style="color:#4ade80;font-size:13px">This is a normal, healthy result. '
+            'Roughly 4 in 10 people fall into this category.</span></div>',
+            unsafe_allow_html=True
+        )
+    elif confidence < 55:
+        st.markdown(
+            f'<div style="background:#1c1707;border:1px solid #92400e;border-radius:10px;'
+            f'padding:.9rem 1.1rem;margin-bottom:1rem;color:#fcd34d;font-size:14px">'
+            f'⚠️ <b>Low confidence ({confidence}%) — treat as indicative only</b><br>'
+            f'<span style="font-size:13px">'
+            f'{"Confidence limited by: " + ", ".join(capped) if capped else "Evidence in this image is limited or ambiguous."}'
+            f'</span></div>',
+            unsafe_allow_html=True
+        )
+
     # Header card
     quality_color = {"good": "#22c55e", "fair": "#eab308", "poor": "#ef4444"}.get(quality, "#64748b")
     st.markdown(f"""
@@ -369,11 +393,17 @@ def render_vision_results(diag: dict):
         st.markdown("**🔬 TCM Patterns Detected**")
         patterns_data = diag.get("tcm_patterns", [])
         if patterns_data:
+            strength_color = {"strong": "#22c55e", "moderate": "#eab308", "weak": "#ef4444"}
             for pat in patterns_data:
                 conf = pat.get("confidence", 0)
+                strength = str(pat.get("evidence_strength", "")).lower()
+                sc = strength_color.get(strength, "#64748b")
+                badge = (f'<span style="background:{sc}22;border:1px solid {sc}66;color:{sc};'
+                         f'padding:1px 8px;border-radius:10px;font-size:10px;text-transform:uppercase;'
+                         f'letter-spacing:.05em">{strength} evidence</span>') if strength else ""
                 st.markdown(f"""
                 <div style="margin:.4rem 0;padding:.6rem .8rem;background:#0d1e30;border-radius:8px">
-                  <div style="display:flex;justify-content:space-between">
+                  <div style="display:flex;justify-content:space-between;align-items:center">
                     <span style="color:#cbd5e1;font-size:13px">{pat.get('pattern_en','')}</span>
                     <span style="color:#7ec8e3;font-size:13px;font-weight:600">{conf}%</span>
                   </div>
@@ -381,7 +411,23 @@ def render_vision_results(diag: dict):
                   <div class="confidence-bar" style="margin-top:.4rem">
                     <div class="confidence-fill" style="width:{conf}%"></div>
                   </div>
+                  <div style="margin-top:.4rem">{badge}</div>
                 </div>""", unsafe_allow_html=True)
+
+                support = pat.get("supporting_indicators", []) or []
+                contra = pat.get("contradicting_indicators", []) or []
+                if support or contra:
+                    with st.expander(f"🔎 Evidence for {pat.get('pattern_en','')[:38]}"):
+                        if support:
+                            st.markdown("**✓ Observed evidence supporting this:**")
+                            for s in support:
+                                st.markdown(f"<span style='color:#86efac;font-size:13px'>• {s}</span>",
+                                            unsafe_allow_html=True)
+                        if contra:
+                            st.markdown("**✗ Evidence against this:**")
+                            for c in contra:
+                                st.markdown(f"<span style='color:#fca5a5;font-size:13px'>• {c}</span>",
+                                            unsafe_allow_html=True)
         else:
             st.markdown(f'<span class="pattern-badge">{primary}</span>', unsafe_allow_html=True)
             for s in secondary:
@@ -456,11 +502,68 @@ def render_vision_results(diag: dict):
         for i, principle in enumerate(principles):
             cols[i % 3].markdown(f'<span class="meta-pill green">✓ {principle}</span>', unsafe_allow_html=True)
 
-    # Herb hints
-    hint_herbs = get_pattern_herb_hints(primary)
-    if hint_herbs:
-        st.markdown(f"**🌿 Key Herbs Suggested for {primary}:**")
-        st.markdown(" ".join(f'<span class="meta-pill blue">{h}</span>' for h in hint_herbs), unsafe_allow_html=True)
+    # Herb hints — only when there is an actual pattern to treat
+    if not is_balanced:
+        hint_herbs = get_pattern_herb_hints(primary)
+        if hint_herbs:
+            st.markdown(f"**🌿 Key Herbs Suggested for {primary}:**")
+            st.markdown(" ".join(f'<span class="meta-pill blue">{h}</span>' for h in hint_herbs), unsafe_allow_html=True)
+            st.caption("Indicative only — final formulation is generated from the full 551-herb inventory.")
+
+    # ── Transparency: what was actually observed vs inferred ─────────────────
+    st.markdown("---")
+    raw_obs = diag.get("raw_observations", []) or []
+    deviations = diag.get("deviations_from_normal", []) or []
+    limitations = diag.get("limitations", []) or []
+    conf_rationale = diag.get("confidence_rationale", "")
+
+    with st.expander("🔍 How this assessment was reached (transparency)"):
+        if conf_rationale:
+            st.markdown(f"**Why confidence is {confidence}%:**")
+            st.caption(conf_rationale)
+            if diag.get("confidence_capped_because"):
+                st.caption("Confidence capped by: " + ", ".join(diag["confidence_capped_because"]))
+            st.markdown("")
+
+        if raw_obs:
+            st.markdown("**📷 Raw visual observations (what the AI literally saw):**")
+            for o in raw_obs:
+                st.markdown(f"<span style='color:#cbd5e1;font-size:13px'>• {o}</span>",
+                            unsafe_allow_html=True)
+            st.markdown("")
+
+        st.markdown("**⚖️ Findings outside normal limits:**")
+        if deviations:
+            for d in deviations:
+                st.markdown(f"<span style='color:#fcd34d;font-size:13px'>• {d}</span>",
+                            unsafe_allow_html=True)
+        else:
+            st.markdown("<span style='color:#86efac;font-size:13px'>• None — all observations within normal healthy range</span>",
+                        unsafe_allow_html=True)
+        st.markdown("")
+
+        st.markdown("**🚧 What this assessment cannot tell you:**")
+        default_limits = [
+            "Pulse diagnosis (脉诊) — the second pillar of TCM diagnosis, unavailable from a photo",
+            "Symptom history, sleep, digestion, emotional state (问诊 inquiry)",
+            "Sound and odour assessment (闻诊)",
+        ]
+        for l in (limitations + default_limits):
+            st.markdown(f"<span style='color:#94a3b8;font-size:13px'>• {l}</span>",
+                        unsafe_allow_html=True)
+
+        # Method provenance
+        mode = diag.get("pipeline_mode", "claude_only")
+        st.markdown("")
+        st.markdown("**🧬 Method used:**")
+        if mode == "yolo+claude":
+            st.markdown("<span style='color:#86efac;font-size:13px'>• YOLOv8 object detection (trained on labelled tongue dataset) + Claude Vision synthesis</span>",
+                        unsafe_allow_html=True)
+            st.caption("Note: the detector is reliable for coating colour; other feature classes have lower validated accuracy.")
+        else:
+            st.markdown("<span style='color:#93c5fd;font-size:13px'>• Claude Vision only — general-purpose AI applying TCM observation criteria</span>",
+                        unsafe_allow_html=True)
+            st.caption("No specialised tongue detector is active. Findings are AI inference from the photo, not measurement against a labelled clinical dataset.")
 
     # Disclaimer
     if disclaimer:
