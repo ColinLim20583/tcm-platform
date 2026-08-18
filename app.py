@@ -120,12 +120,20 @@ with st.sidebar:
     st.divider()
 
     show_key = st.checkbox("👁 Show key (use on mobile)", value=False)
-    api_key = st.text_input(
-        "🔑 Anthropic API Key",
-        value=ANTHROPIC_API_KEY,
-        type="default" if show_key else "password",
-        help="Tick 'Show key' on mobile so you can see what you're typing"
-    )
+    if show_key:
+        api_key = st.text_area(
+            "🔑 Anthropic API Key",
+            value=ANTHROPIC_API_KEY,
+            height=120,
+            help="Paste your full key here — it will wrap across lines so you can read it"
+        ).strip()
+    else:
+        api_key = st.text_input(
+            "🔑 Anthropic API Key",
+            value=ANTHROPIC_API_KEY,
+            type="password",
+            help="Tick 'Show key' on mobile to paste and verify your key"
+        )
     if not api_key:
         st.warning("⚠️ Add your API key to enable AI features")
 
