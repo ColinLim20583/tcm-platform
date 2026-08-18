@@ -95,7 +95,8 @@ st.markdown("""
   .stTabs [data-baseweb="tab"] { background:#162435; color:#94a3b8; border-radius:8px 8px 0 0; white-space:nowrap; flex-shrink:0; }
   .stTabs [aria-selected="true"] { background:#1e3a4f !important; color:#7ec8e3 !important; }
   .stTabs [data-baseweb="tab-list"] {
-    position:sticky; top:3.5rem; z-index:999; background:#0f1923; padding:.4rem 0;
+    /* z-index kept below the header so it can never cover the sidebar toggle */
+    position:sticky; top:3.5rem; z-index:1; background:#0f1923; padding:.4rem 0;
     overflow-x: auto !important;
     -webkit-overflow-scrolling: touch !important;
     scrollbar-width: none !important;
@@ -103,14 +104,10 @@ st.markdown("""
     display: flex !important;
   }
   .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
-  /* Hide only the Fork/GitHub/deploy toolbar. The header itself must keep its
-     normal height — the sidebar toggle lives inside it, so hiding or collapsing
-     the header takes the toggle with it. Left alone, Streamlit positions and
-     shows the toggle correctly on its own. */
-  header[data-testid="stHeader"] { background: transparent !important; }
-  [data-testid="stToolbar"],
-  [data-testid="stDecoration"],
-  [data-testid="stStatusWidget"] { display: none !important; }
+  /* The header is left completely alone. Every attempt to restyle it — hiding
+     it, zeroing its height, repositioning its children — took the sidebar
+     toggle with it. Streamlit's default header is the only reliable way to
+     keep that button on both desktop and mobile, so the Fork/deploy bar stays. */
 
   .block-container { padding-top: 1rem !important; }
 
@@ -145,6 +142,7 @@ with st.sidebar:
         )
     if not api_key:
         st.warning("⚠️ Add your API key to enable AI features")
+        st.caption("You can also enter it at the top of the main page.")
 
     st.divider()
     st.markdown("### 📊 Knowledge Base Stats")
@@ -178,6 +176,28 @@ with st.sidebar:
     st.divider()
     st.markdown(f"*Powered by Claude Vision + claude-sonnet-4-5*")
     st.markdown(f"*{APP_SUBTITLE}*")
+
+
+# ── Main-page key entry ───────────────────────────────────────────────────────
+# The sidebar is the intended place for this, but it can be collapsed — and on a
+# phone it starts collapsed. This makes sure there is always a visible way to
+# enter the key without depending on the sidebar toggle.
+if not api_key:
+    with st.expander("🔑 Enter your Anthropic API key to enable AI features", expanded=True):
+        st.caption(
+            "Your key is used only for this browser session — it is not stored "
+            "or shared. Get one at console.anthropic.com."
+        )
+        _main_key = st.text_area(
+            "Anthropic API Key",
+            value="",
+            height=100,
+            key="main_page_api_key",
+            help="Paste the full key. It wraps across lines so you can check it pasted completely.",
+        ).strip()
+        if _main_key:
+            api_key = _main_key
+            st.success("✓ Key accepted for this session.")
 
 
 # ── Helper: render product card ───────────────────────────────────────────────
