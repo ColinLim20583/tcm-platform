@@ -102,8 +102,10 @@ st.markdown("""
     display: flex !important;
   }
   .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
-  /* Hide only the toolbar buttons, keep the hamburger sidebar toggle */
-  header[data-testid="stHeader"] .stToolbar { display:none; }
+  /* Hide the Fork/GitHub/deploy bar entirely */
+  header[data-testid="stHeader"] { display:none !important; }
+  /* Keep the sidebar hamburger button accessible on mobile */
+  [data-testid="stSidebarCollapsedControl"] { display:block !important; position:fixed !important; top:.5rem !important; left:.5rem !important; z-index:999999 !important; }
   .block-container { padding-top: 1rem !important; }
 
   /* Sidebar API key input — wider touch target on mobile */
