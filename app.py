@@ -467,24 +467,6 @@ def render_vision_results(diag: dict):
     return diag
 
 
-# ── Mobile API key (shown on main page when key not set) ──────────────────────
-if not api_key:
-    st.markdown(
-        '<div style="background:#0c1f3a;border:1px solid #2563eb;border-radius:10px;'
-        'padding:.8rem 1rem;margin-bottom:.8rem;font-size:14px;color:#93c5fd">'
-        '🔑 <b>Enter your Anthropic API key below to get started</b></div>',
-        unsafe_allow_html=True
-    )
-    mobile_key = st.text_area(
-        "Anthropic API Key",
-        value="",
-        height=100,
-        placeholder="Paste your sk-ant-... key here",
-        key="main_api_key_input"
-    )
-    if mobile_key.strip():
-        api_key = mobile_key.strip()
-
 # ── TABS ─────────────────────────────────────────────────────────────────────
 tab_vision, tab_formulation, tab_knowledge, tab_inventory, tab_evidence = st.tabs([
     "🔬 Visual AI Diagnosis",
