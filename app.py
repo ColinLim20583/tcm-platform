@@ -176,6 +176,29 @@ with st.sidebar:
 
 
 # ── Helper: render product card ───────────────────────────────────────────────
+def render_field(container, label: str, value):
+    """
+    Label + free-text value that wraps instead of truncating.
+
+    st.metric clips its value to one line with an ellipsis — fine for numbers,
+    but these diagnosis fields are full descriptive sentences.
+    """
+    text = str(value).strip() or "—"
+    safe = (
+        text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+    )
+    container.markdown(
+        '<div style="margin-bottom:.85rem">'
+        '<div style="font-size:.75rem;color:#9ca3af;text-transform:uppercase;'
+        'letter-spacing:.04em;margin-bottom:.15rem">' + label + '</div>'
+        '<div style="font-size:.95rem;line-height:1.45;color:inherit">' + safe + '</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_product_card(result: dict, show_business_btn: bool = True, compact: bool = False, key_suffix: str = ""):
     name_en = result.get("product_name_en", "Unnamed Product")
     name_zh = result.get("product_name_zh", "")
@@ -468,10 +491,12 @@ def render_vision_results(diag: dict):
         st.markdown("---")
         st.markdown("**👅 Tongue Diagnosis (舌诊)**")
         tc1, tc2, tc3, tc4 = st.columns(4)
-        tc1.metric("Body Colour", tongue.get("body_color","—"))
-        tc2.metric("Coating", tongue.get("coating_color","—"))
-        tc3.metric("Shape", tongue.get("shape","—"))
-        tc4.metric("Moisture", tongue.get("moisture","—"))
+        # st.metric truncates its value to a single line, which cuts these
+        # descriptions off mid-word. Render as markdown so they wrap in full.
+        render_field(tc1, "Body Colour", tongue.get("body_color", "—"))
+        render_field(tc2, "Coating", tongue.get("coating_color", "—"))
+        render_field(tc3, "Shape", tongue.get("shape", "—"))
+        render_field(tc4, "Moisture", tongue.get("moisture", "—"))
         if tongue.get("special_features"):
             st.caption("Special features: " + ", ".join(tongue["special_features"]))
         if tongue.get("findings_summary"):
@@ -482,9 +507,9 @@ def render_vision_results(diag: dict):
         st.markdown("**🙂 Face Diagnosis (面诊)**")
         fc1, fc2 = st.columns([1, 2])
         with fc1:
-            fc1.metric("Complexion", face.get("overall_complexion","—"))
-            fc1.metric("Lustre", face.get("lustre","—"))
-            fc1.metric("Skin", face.get("skin_texture","—"))
+            render_field(fc1, "Complexion", face.get("overall_complexion", "—"))
+            render_field(fc1, "Lustre", face.get("lustre", "—"))
+            render_field(fc1, "Skin", face.get("skin_texture", "—"))
         with fc2:
             zones = face.get("zone_findings", {})
             if zones:
