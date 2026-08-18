@@ -31,7 +31,10 @@ st.markdown("""
 <style>
   /* Base */
   .stApp { background-color: #0f1923; color: #e2e8f0; }
-  .block-container { padding: 1.5rem 2rem; }
+  /* Horizontal padding only — the top padding is Streamlit's and it is what
+     keeps content clear of the fixed header. Overriding it pulls the tabs up
+     underneath. */
+  .block-container { padding-left: 2rem; padding-right: 2rem; }
 
   /* Sidebar */
   [data-testid="stSidebar"] { background-color: #0a1118 !important; border-right: 1px solid #1e3a4f; }
@@ -104,12 +107,10 @@ st.markdown("""
     display: flex !important;
   }
   .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
-  /* Hide the Fork/GitHub/Deploy menu only. The <header> element itself is left
-     untouched on purpose — the sidebar toggle is one of its children, so any
-     rule that hides or collapses the header takes the toggle with it. */
-  [data-testid="stToolbar"] { display: none !important; }
-
-  .block-container { padding-top: 1rem !important; }
+  /* NOTE: [data-testid="stToolbar"] does NOT match the Share/GitHub menu on
+     Streamlit 1.61 — verified live, the menu stayed visible. Left out until the
+     real selector is confirmed by inspecting the page, rather than guessing.
+     The <header> itself must stay untouched: the sidebar toggle is its child. */
 
   /* Sidebar API key input — wider touch target on mobile */
   [data-testid="stSidebar"] input {
