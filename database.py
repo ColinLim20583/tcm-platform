@@ -4,6 +4,40 @@ from datetime import datetime
 from config import DB_PATH
 
 
+# Keys that exist for display only and must never reach the database.
+_NON_PERSISTED_KEYS = {"annotated_image"}   # PIL Image with detection boxes drawn
+
+
+def _jsonable(value):
+    """
+    Make a value safe for json.dumps.
+
+    Two things leak in from the YOLO path: PIL Images (display only) and numpy
+    scalars (detection confidences and box coordinates). numpy floats look like
+    numbers but json.dumps rejects them, so they are unwrapped rather than
+    stringified — otherwise a confidence of 0.87 would be stored as "0.87".
+    """
+    if isinstance(value, dict):
+        return {
+            k: _jsonable(v)
+            for k, v in value.items()
+            if k not in _NON_PERSISTED_KEYS
+        }
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    # numpy scalars and anything else exposing .item()
+    if hasattr(value, "item") and hasattr(value, "dtype"):
+        try:
+            return value.item()
+        except Exception:
+            pass
+    if isinstance(value, (bytes, bytearray)):
+        return f"<{len(value)} bytes omitted>"
+    return str(value)
+
+
 def get_connection():
     return sqlite3.connect(DB_PATH)
 
@@ -119,7 +153,7 @@ def save_visual_diagnosis(data: dict) -> int:
         data.get("primary_pattern_zh", ""),
         data.get("constitution_type", ""),
         data.get("confidence_overall", 0),
-        json.dumps(data, ensure_ascii=False),
+        json.dumps(_jsonable(data), ensure_ascii=False),
     ))
     row_id = c.lastrowid
     conn.commit()
