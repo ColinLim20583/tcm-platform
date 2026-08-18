@@ -142,7 +142,6 @@ with st.sidebar:
         )
     if not api_key:
         st.warning("⚠️ Add your API key to enable AI features")
-        st.caption("You can also enter it at the top of the main page.")
 
     st.divider()
     st.markdown("### 📊 Knowledge Base Stats")
@@ -176,28 +175,6 @@ with st.sidebar:
     st.divider()
     st.markdown(f"*Powered by Claude Vision + claude-sonnet-4-5*")
     st.markdown(f"*{APP_SUBTITLE}*")
-
-
-# ── Main-page key entry ───────────────────────────────────────────────────────
-# The sidebar is the intended place for this, but it can be collapsed — and on a
-# phone it starts collapsed. This makes sure there is always a visible way to
-# enter the key without depending on the sidebar toggle.
-if not api_key:
-    with st.expander("🔑 Enter your Anthropic API key to enable AI features", expanded=True):
-        st.caption(
-            "Your key is used only for this browser session — it is not stored "
-            "or shared. Get one at console.anthropic.com."
-        )
-        _main_key = st.text_area(
-            "Anthropic API Key",
-            value="",
-            height=100,
-            key="main_page_api_key",
-            help="Paste the full key. It wraps across lines so you can check it pasted completely.",
-        ).strip()
-        if _main_key:
-            api_key = _main_key
-            st.success("✓ Key accepted for this session.")
 
 
 # ── Helper: render product card ───────────────────────────────────────────────
