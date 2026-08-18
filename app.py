@@ -79,6 +79,9 @@ st.markdown("""
   .zone-cell .zone-label { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:.05em; }
   .zone-cell .zone-val { font-size:13px; color:#cbd5e1; margin-top:2px; }
 
+  /* Scrollable inputs (helps on mobile for long API keys) */
+  input[type="password"], input[type="text"] { overflow-x: auto !important; text-overflow: clip !important; }
+
   /* Buttons */
   .stButton > button { background:#1e3a4f; color:#7ec8e3; border:1px solid #2563eb44; border-radius:8px; }
   .stButton > button:hover { background:#2563eb; color:#fff; border-color:#2563eb; }
@@ -99,14 +102,46 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ── Session state for API key (shared between sidebar + mobile banner) ────────
+if "api_key" not in st.session_state:
+    st.session_state["api_key"] = ANTHROPIC_API_KEY
+
+# ── Mobile API key banner (shown when key is missing) ─────────────────────────
+if not st.session_state["api_key"]:
+    st.markdown("""
+    <style>
+    .mobile-key-box {
+        background:#0c1f3a; border:1px solid #2563eb88;
+        border-radius:10px; padding:.8rem 1rem; margin-bottom:1rem;
+    }
+    </style>
+    <div class="mobile-key-box">📱 <b>Enter your Anthropic API key to get started</b></div>
+    """, unsafe_allow_html=True)
+    mobile_key = st.text_input(
+        "🔑 API Key",
+        value="",
+        type="password",
+        placeholder="sk-ant-...",
+        key="mobile_api_input",
+        help="Paste your Anthropic API key — scroll left/right in the field if needed"
+    )
+    if mobile_key:
+        st.session_state["api_key"] = mobile_key
+        st.rerun()
+
+api_key = st.session_state["api_key"]
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown(f"## 🌿 {COMPANY}")
     st.markdown(f"**{APP_TITLE}**  \n*v{VERSION}*")
     st.divider()
 
-    api_key = st.text_input("🔑 Anthropic API Key", value=ANTHROPIC_API_KEY,
+    sidebar_key = st.text_input("🔑 Anthropic API Key", value=api_key,
                             type="password", help="Enter your Anthropic API key")
+    if sidebar_key != api_key:
+        st.session_state["api_key"] = sidebar_key
+        api_key = sidebar_key
     if not api_key:
         st.warning("⚠️ Add your API key to enable AI features")
 
