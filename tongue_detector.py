@@ -39,26 +39,64 @@ TCM_MEANING = {
     "xinfeitu":     {"zh": "心肺区凸","meaning": "Heart/Lung zone convex",   "tcm": "Heart Fire; Lung Heat or Phlegm",                "color": (190,24,93)},
 }
 
+# ── Per-class validated reliability ───────────────────────────────────────────
+# Measured mAP50 on the held-out test set. Detections from unreliable classes
+# have their confidence down-weighted so the pipeline does not present a
+# poorly-validated class with the same authority as a well-validated one.
+# Overall model mAP50 = 0.325 — only the coating classes are genuinely strong.
+CLASS_RELIABILITY = {
+    "baitaishe":    0.94,   # white coating   — mAP50 0.935  (strong)
+    "huangtaishe":  0.82,   # yellow coating  — mAP50 0.817  (strong)
+    "shoushe":      0.62,   # thin tongue     — mAP50 0.623  (moderate)
+    "jiankangshe":  0.50,
+    "botaishe":     0.45,
+    "hongshe":      0.40,
+    "pangdashe":    0.35,
+    "chihenshe":    0.35,
+    "liewenshe":    0.35,
+    "hongdianshe":  0.30,
+    "zishe":        0.30,
+    "heitaishe":    0.25,
+    "huataishe":    0.25,
+    # Zone classes were the weakest in training — treat as indicative only
+    "shenquao":     0.20, "shenqutu":  0.20,
+    "gandanao":     0.20, "gandantu":  0.20,
+    "piweiao":      0.20, "piweitu":   0.20,
+    "xinfeiao":     0.20, "xinfeitu":  0.20,
+}
+DEFAULT_RELIABILITY = 0.25
+
 # ── Pattern synthesis rules ───────────────────────────────────────────────────
-# Maps combinations of detected features to consolidated TCM patterns
+# Each rule is (required_features, pattern, confidence_bonus, mode)
+#   mode "all" → EVERY listed feature must be detected (combination patterns)
+#   mode "any" → a single listed feature is sufficient (single-sign patterns)
+#
+# NOTE: combination patterns such as Spleen Qi Deficiency with Phlegm-Damp are
+# genuinely combination findings. Requiring only one of their features (the old
+# behaviour) produced the same pattern for almost every image.
 PATTERN_RULES = [
-    # (required_features_any_of, pattern, confidence_bonus)
-    ({"pangdashe", "chihenshe"},    "Spleen Qi Deficiency with Phlegm-Damp", 15),
-    ({"liewenshe", "shoushe"},      "Yin Deficiency with Empty Heat",         15),
-    ({"hongshe", "huangtaishe"},    "Excess Heat / Liver Fire",               15),
-    ({"zishe"},                     "Blood Stasis",                           10),
-    ({"hongshe", "liewenshe"},      "Yin Deficiency with Heat",               12),
-    ({"pangdashe", "baitaishe"},    "Spleen Yang Deficiency with Cold-Damp",  12),
-    ({"huangtaishe", "chihenshe"},  "Damp-Heat accumulation",                 12),
-    ({"huataishe"},                 "Stomach Yin Deficiency",                 10),
-    ({"heitaishe"},                 "Extreme pattern (Cold or Heat)",         10),
-    ({"hongdianshe"},               "Heat Toxin / Blood Heat",                10),
-    ({"shenquao", "shoushe"},       "Kidney Yin Deficiency",                  12),
-    ({"shenquao", "pangdashe"},     "Kidney Yang Deficiency",                 12),
-    ({"gandantu", "hongshe"},       "Liver Fire Rising",                      12),
-    ({"xinfeiao"},                  "Heart-Lung Qi Deficiency",               10),
-    ({"piweiao"},                   "Spleen-Stomach Deficiency",              10),
+    # ── Combination patterns — ALL features required ──────────────────────────
+    ({"pangdashe", "chihenshe"},   "Spleen Qi Deficiency with Phlegm-Damp",  12, "all"),
+    ({"liewenshe", "shoushe"},     "Yin Deficiency with Empty Heat",         12, "all"),
+    ({"hongshe", "huangtaishe"},   "Excess Heat / Liver Fire",               12, "all"),
+    ({"hongshe", "liewenshe"},     "Yin Deficiency with Heat",               10, "all"),
+    ({"pangdashe", "baitaishe"},   "Spleen Yang Deficiency with Cold-Damp",  10, "all"),
+    ({"huangtaishe", "chihenshe"}, "Damp-Heat accumulation",                 10, "all"),
+    ({"shenquao", "shoushe"},      "Kidney Yin Deficiency",                   8, "all"),
+    ({"shenquao", "pangdashe"},    "Kidney Yang Deficiency",                  8, "all"),
+    ({"gandantu", "hongshe"},      "Liver Fire Rising",                       8, "all"),
+
+    # ── Single-sign patterns — one distinctive feature is sufficient ──────────
+    ({"zishe"},                    "Blood Stasis",                            6, "any"),
+    ({"huataishe"},                "Stomach Yin Deficiency",                  6, "any"),
+    ({"heitaishe"},                "Extreme pattern (Cold or Heat)",          6, "any"),
+    ({"hongdianshe"},              "Heat Toxin / Blood Heat",                 6, "any"),
+    ({"xinfeiao"},                 "Heart-Lung Qi Deficiency",                4, "any"),
+    ({"piweiao"},                  "Spleen-Stomach Deficiency",               4, "any"),
 ]
+
+# Detections below this confidence are ignored entirely
+MIN_DETECTION_CONF = 35.0
 
 CONSTITUTION_MAP = {
     "pangdashe": "Phlegm-Damp Constitution (痰湿质)",
@@ -87,19 +125,27 @@ FOCUS_MAP = {
 }
 
 
+class DetectorNotAvailable(RuntimeError):
+    """Raised in strict mode when the YOLO model cannot be loaded."""
+    pass
+
+
 class TongueDetector:
     def __init__(self, model_path: str = None):
         """
         Load the trained YOLOv8 model.
-        Falls back to None if model not yet trained — vision_engine uses
-        Claude-only analysis in that case.
+
+        Records the precise failure reason in self.load_error so the UI can
+        report exactly why detection is unavailable rather than silently
+        degrading to Claude-only analysis.
         """
         self.model = None
         self.model_path = None
+        self.load_error = None
+        self.class_names = []
 
+        base = Path(__file__).parent / "models"
         if model_path is None:
-            # Auto-discover model
-            base = Path(__file__).parent / "models"
             candidates = ["tongue_yolo_best.pt", "tongue_yolo_last.pt"]
             for c in candidates:
                 p = base / c
@@ -107,30 +153,81 @@ class TongueDetector:
                     model_path = str(p)
                     break
 
-        if model_path and Path(model_path).exists():
-            try:
-                from ultralytics import YOLO
-                self.model = YOLO(model_path)
-                self.model_path = model_path
-                print(f"✓ TongueDetector loaded: {model_path}")
-            except ImportError:
-                print("⚠ ultralytics not installed — YOLO detection disabled")
-            except Exception as e:
-                print(f"⚠ Could not load model: {e}")
-        else:
-            print("ℹ TongueDetector: no trained model found — using Claude Vision only")
+        if not model_path or not Path(model_path).exists():
+            self.load_error = (
+                f"Model file not found. Expected models/tongue_yolo_best.pt "
+                f"under {base}. Train with train_yolo.py or train_colab.ipynb, "
+                f"then place the weights there."
+            )
+            print(f"✗ TongueDetector: {self.load_error}")
+            return
+
+        try:
+            from ultralytics import YOLO
+        except ImportError as e:
+            self.load_error = (
+                f"ultralytics is not installed ({e}). Install with: "
+                f"pip install ultralytics torch torchvision"
+            )
+            print(f"✗ TongueDetector: {self.load_error}")
+            return
+        except Exception as e:
+            self.load_error = (
+                f"ultralytics failed to import: {type(e).__name__}: {e}. "
+                f"This is usually an OpenCV binary incompatibility — try "
+                f"pip install opencv-python-headless"
+            )
+            print(f"✗ TongueDetector: {self.load_error}")
+            return
+
+        try:
+            self.model = YOLO(model_path)
+            self.model_path = model_path
+            names = getattr(self.model, "names", {}) or {}
+            self.class_names = [names[k] for k in sorted(names)] if names else []
+            print(f"✓ TongueDetector loaded: {model_path} ({len(self.class_names)} classes)")
+        except Exception as e:
+            self.load_error = f"Model failed to load: {type(e).__name__}: {e}"
+            self.model = None
+            print(f"✗ TongueDetector: {self.load_error}")
 
     @property
     def is_ready(self) -> bool:
         return self.model is not None
 
-    def detect(self, image_bytes: bytes, conf_threshold: float = 0.25) -> dict:
+    def require_ready(self):
+        """Raise a descriptive error if the detector is not usable."""
+        if not self.is_ready:
+            raise DetectorNotAvailable(
+                self.load_error or "YOLO detector is unavailable for an unknown reason."
+            )
+
+    def diagnostics(self) -> dict:
+        """Machine-readable status for the UI diagnostics panel."""
+        return {
+            "ready": self.is_ready,
+            "model_path": self.model_path,
+            "num_classes": len(self.class_names),
+            "class_names": self.class_names,
+            "load_error": self.load_error,
+            "validated_map50": 0.325,
+            "strong_classes": [c for c, r in CLASS_RELIABILITY.items() if r >= 0.6],
+        }
+
+    def detect(self, image_bytes: bytes, conf_threshold: float = 0.25,
+               strict: bool = False) -> dict:
         """
         Run YOLOv8 detection on image bytes.
-        Returns structured detection results ready for Claude synthesis.
+
+        Args:
+            strict: if True, raise DetectorNotAvailable instead of returning
+                    an empty result when the model is not loaded.
         """
         if not self.is_ready:
-            return {"detections": [], "yolo_available": False}
+            if strict:
+                self.require_ready()
+            return {"detections": [], "yolo_available": False,
+                    "load_error": self.load_error}
 
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         results = self.model.predict(img, conf=conf_threshold, verbose=False)[0]
@@ -164,6 +261,19 @@ class TongueDetector:
                 seen[d["class_name"]] = d
         detections = list(seen.values())
 
+        # Drop detections below the minimum usable confidence, and annotate
+        # each surviving detection with its validated class reliability
+        detections = [d for d in detections if d["confidence"] >= MIN_DETECTION_CONF]
+        for d in detections:
+            rel = CLASS_RELIABILITY.get(d["class_name"], DEFAULT_RELIABILITY)
+            d["reliability"] = round(rel, 2)
+            d["reliability_label"] = (
+                "validated" if rel >= 0.6 else
+                "moderate" if rel >= 0.35 else "low confidence class"
+            )
+        detections.sort(key=lambda x: -x["confidence"])
+        seen = {d["class_name"]: d for d in detections}
+
         # Synthesise patterns from detections
         patterns = self._synthesise_patterns(detections)
         constitution = self._determine_constitution(detections)
@@ -184,28 +294,68 @@ class TongueDetector:
         }
 
     def _synthesise_patterns(self, detections: list) -> list:
-        """Synthesise TCM patterns from detected feature combinations."""
+        """
+        Synthesise TCM patterns from detected feature combinations.
+
+        Combination rules require ALL their features to be present. Confidence
+        is weighted by each class's validated reliability (mAP50), so a
+        detection from a weak class cannot drive a high-confidence pattern.
+        """
         detected_set = {d["class_name"] for d in detections}
+        conf_by_class = {d["class_name"]: d["confidence"] for d in detections}
         patterns = []
 
-        for required, pattern, bonus in PATTERN_RULES:
-            if required & detected_set:  # any overlap
-                # Base confidence = avg confidence of matching features
-                matching = [d["confidence"] for d in detections if d["class_name"] in required]
-                base_conf = sum(matching) / len(matching) if matching else 50
-                total_conf = min(95, base_conf + bonus)
-                patterns.append({"pattern": pattern, "confidence": round(total_conf, 1),
-                                  "triggers": list(required & detected_set)})
+        for required, pattern, bonus, mode in PATTERN_RULES:
+            if mode == "all":
+                if not required.issubset(detected_set):
+                    continue
+                matched = required
+            else:
+                matched = required & detected_set
+                if not matched:
+                    continue
 
-        # Fallback: individual feature patterns
+            # Reliability-weighted mean confidence across the matched features
+            weighted, total_w = 0.0, 0.0
+            for cls in matched:
+                rel = CLASS_RELIABILITY.get(cls, DEFAULT_RELIABILITY)
+                weighted += conf_by_class.get(cls, 50) * rel
+                total_w += rel
+            base_conf = (weighted / total_w) if total_w else 50.0
+
+            # Reliability of the weakest contributing class caps the pattern
+            weakest = min(CLASS_RELIABILITY.get(c, DEFAULT_RELIABILITY) for c in matched)
+            ceiling = 40 + (weakest * 55)      # rel 0.20 -> 51%, rel 0.94 -> 92%
+
+            total_conf = min(ceiling, base_conf + bonus)
+
+            patterns.append({
+                "pattern": pattern,
+                "confidence": round(total_conf, 1),
+                "triggers": sorted(matched),
+                "reliability": round(weakest, 2),
+                "evidence_strength": (
+                    "strong" if weakest >= 0.6 else
+                    "moderate" if weakest >= 0.35 else "weak"
+                ),
+            })
+
+        # Fallback: single-feature interpretation, but only for reliable classes
         if not patterns:
-            for det in detections[:3]:
-                meaning = TCM_MEANING.get(det["class_name"], {})
-                tcm = meaning.get("tcm", "")
+            for det in sorted(detections, key=lambda x: -x["confidence"])[:3]:
+                cls = det["class_name"]
+                rel = CLASS_RELIABILITY.get(cls, DEFAULT_RELIABILITY)
+                if rel < 0.4:
+                    continue          # too unreliable to stand alone
+                tcm = TCM_MEANING.get(cls, {}).get("tcm", "")
                 if tcm:
-                    patterns.append({"pattern": tcm.split(";")[0].strip(),
-                                     "confidence": det["confidence"],
-                                     "triggers": [det["class_name"]]})
+                    patterns.append({
+                        "pattern": tcm.split(";")[0].strip(),
+                        "confidence": round(min(det["confidence"], 40 + rel * 55), 1),
+                        "triggers": [cls],
+                        "reliability": round(rel, 2),
+                        "evidence_strength": "moderate" if rel >= 0.6 else "weak",
+                    })
 
         patterns.sort(key=lambda x: -x["confidence"])
         return patterns[:5]
@@ -259,23 +409,41 @@ class TongueDetector:
         if not detections:
             return ""
 
-        lines = ["=== YOLOv8 TONGUE FEATURE DETECTIONS ==="]
-        lines.append(f"Model: Trained on 12,889 tongue images (shezhenv3 COCO dataset)")
+        lines = ["=== YOLOv8 TONGUE FEATURE DETECTIONS (objective) ==="]
+        lines.append(
+            "Model: YOLOv8n trained on the shezhenv3 COCO tongue dataset. "
+            "Overall test-set mAP50 = 0.325. Per-class accuracy varies widely — "
+            "each detection below is labelled with its validated reliability."
+        )
         lines.append(f"Detected {len(detections)} tongue feature(s):\n")
 
         for det in detections:
+            rel = det.get("reliability", DEFAULT_RELIABILITY)
+            label = det.get("reliability_label", "")
             lines.append(
-                f"  [{det['confidence']:.0f}%] {det['zh']} ({det['class_name']}) — "
-                f"{det['meaning']} | TCM: {det['tcm_significance']}"
+                f"  [{det['confidence']:.0f}% conf | class reliability {rel:.2f} — {label}] "
+                f"{det['zh']} ({det['class_name']}) — {det['meaning']} | "
+                f"TCM: {det['tcm_significance']}"
             )
 
-        lines.append(f"\nSynthesised TCM Patterns:")
+        lines.append("\nSynthesised TCM Patterns (rule-based from detections):")
         for pat in patterns[:3]:
-            lines.append(f"  [{pat['confidence']:.0f}%] {pat['pattern']}")
+            lines.append(
+                f"  [{pat['confidence']:.0f}% | {pat.get('evidence_strength','?')} evidence] "
+                f"{pat['pattern']}  (triggered by: {', '.join(pat.get('triggers', []))})"
+            )
 
-        lines.append(f"\nConstitution: {constitution}")
+        lines.append(f"\nRule-based constitution estimate: {constitution}")
         lines.append("\n=== END YOLO DETECTIONS ===")
-        lines.append("Please synthesise the above objective detections with your visual assessment to produce the final TCM diagnosis.")
+        lines.append(
+            "HOW TO USE THIS: Detections marked 'validated' (reliability >= 0.6) are "
+            "trustworthy objective evidence — the white-coating and yellow-coating "
+            "classes in particular are well validated. Detections marked 'low "
+            "confidence class' come from classes that performed poorly in validation; "
+            "treat those as weak hints only and do NOT build a primary diagnosis on "
+            "them alone. If the detector reports nothing, that is meaningful evidence "
+            "of a normal tongue, not a reason to invent findings."
+        )
 
         return "\n".join(lines)
 

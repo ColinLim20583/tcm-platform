@@ -649,6 +649,8 @@ def analyze_with_yolo_pipeline(
     api_key: str,
     detector=None,
     conf_threshold: float = 0.25,
+    vitals: dict = None,
+    require_yolo: bool = False,
 ) -> dict:
     """
     Full Option-3 pipeline:
@@ -675,16 +677,53 @@ def analyze_with_yolo_pipeline(
         try:
             from tongue_detector import get_detector
             detector = get_detector()
-        except Exception:
-            pass
+        except Exception as e:
+            if require_yolo:
+                raise RuntimeError(
+                    f"YOLO detection is required but the detector could not be "
+                    f"imported: {type(e).__name__}: {e}"
+                )
 
-    if detector is not None and getattr(detector, "is_ready", False):
+    if require_yolo:
+        # Strict mode — fail loudly rather than silently degrading
+        if detector is None:
+            raise RuntimeError(
+                "YOLO detection is required but no detector could be created."
+            )
+        if not getattr(detector, "is_ready", False):
+            raise RuntimeError(
+                "YOLO detection is required but the model is not loaded.\n"
+                f"Reason: {getattr(detector, 'load_error', 'unknown')}"
+            )
+        yolo_result = detector.detect(
+            image_bytes, conf_threshold=conf_threshold, strict=True
+        )
+    elif detector is not None and getattr(detector, "is_ready", False):
         try:
             yolo_result = detector.detect(image_bytes, conf_threshold=conf_threshold)
         except Exception as e:
             yolo_result = {"yolo_available": False, "detections": [], "error": str(e)}
 
     yolo_context = yolo_result.get("claude_context", "")
+
+    # If YOLO ran but found nothing, tell Claude that explicitly — absence of
+    # detections is evidence of a normal tongue, not a licence to speculate.
+    if yolo_result.get("yolo_available") and not yolo_result.get("detections"):
+        yolo_context = (
+            "=== YOLOv8 TONGUE FEATURE DETECTIONS (objective) ===\n"
+            "The trained detector ran successfully and found NO tongue features "
+            "above the confidence threshold.\n\n"
+            "HOW TO USE THIS: This is meaningful negative evidence. A tongue with "
+            "no detected abnormal features is most consistent with a NORMAL, "
+            "healthy tongue. Do not invent findings to fill this gap. Strongly "
+            "consider reporting 'No significant pattern — Balanced (平和质)'.\n"
+            "=== END YOLO DETECTIONS ==="
+        )
+
+    # ── Vitals context (objective measurements) ───────────────────────────────
+    vitals_context = ""
+    if vitals and vitals.get("entered"):
+        vitals_context = "\n\n" + vitals.get("claude_context", "")
 
     # ── Step 2: Claude Vision (with YOLO pre-context injected) ────────────────
     client = anthropic.Anthropic(api_key=api_key)
@@ -697,10 +736,14 @@ def analyze_with_yolo_pipeline(
         "full": "Perform COMPREHENSIVE analysis of BOTH tongue (if shown) and face.",
     }.get(scan_focus, "Analyse all visible diagnostic indicators.")
 
-    # Prepend YOLO structured findings if available
+    # Prepend YOLO structured findings and objective vitals
     yolo_section = ""
     if yolo_context:
-        yolo_section = f"\n\nOBJECTIVE AI PRE-DETECTION (YOLOv8 trained on 19,585 tongue images):\n{yolo_context}\n\nPlease incorporate these objective detections into your analysis. They are the result of a specialised tongue-feature detector; treat them as a second clinical observer's findings.\n"
+        yolo_section = (
+            "\n\nOBJECTIVE PRE-DETECTION FROM A SPECIALISED TONGUE DETECTOR:\n"
+            f"{yolo_context}\n"
+        )
+    yolo_section += vitals_context
 
     prompt = build_assessment_prompt(focus_instructions, yolo_section)
 
@@ -744,6 +787,85 @@ def analyze_with_yolo_pipeline(
     result["yolo_constitution"] = yolo_result.get("constitution", "")
     result["yolo_focus_areas"] = yolo_result.get("focus_areas", [])
     result["annotated_image"] = yolo_result.get("annotated_image", None)
-    result["pipeline_mode"] = "yolo+claude" if yolo_result.get("yolo_available") else "claude_only"
+    result["yolo_load_error"] = yolo_result.get("load_error")
+    result["yolo_ran_found_nothing"] = bool(
+        yolo_result.get("yolo_available") and not yolo_result.get("detections")
+    )
+    result["pipeline_mode"] = (
+        "yolo+claude" if yolo_result.get("yolo_available") else "claude_only"
+    )
+
+    # ── Step 4: Merge vitals and check for contradictions ─────────────────────
+    if vitals and vitals.get("entered"):
+        result["vitals"] = vitals
+        result["vitals_entered"] = True
+        result = reconcile_with_vitals(result, vitals)
+    else:
+        result["vitals_entered"] = False
+
+    return result
+
+
+# ─── Vitals reconciliation ───────────────────────────────────────────────────
+
+def reconcile_with_vitals(result: dict, vitals: dict) -> dict:
+    """
+    Cross-check the image-derived diagnosis against objective measurements.
+
+    Measured pulse rate is objective; a photo-derived Heat or Cold diagnosis
+    that contradicts it should be flagged and penalised. This is the main
+    mechanism by which the vitals actually constrain the diagnosis rather
+    than simply decorating it.
+    """
+    pulse_info = vitals.get("pulse_tcm", {})
+    pulse_cat = pulse_info.get("category_en", "")
+    conflicts = []
+
+    def mentions(text, words):
+        t = str(text).lower()
+        return any(w in t for w in words)
+
+    heat_words = ["heat", "fire", "yang rising", "damp-heat", "热", "火"]
+    cold_words = ["cold", "yang deficiency", "寒", "阳虚"]
+
+    primary = result.get("primary_pattern", "")
+
+    # Rapid pulse contradicts a Cold/Yang-deficiency diagnosis
+    if pulse_cat == "Rapid pulse" and mentions(primary, cold_words) \
+            and not mentions(primary, heat_words):
+        conflicts.append(
+            f"Measured pulse is rapid ({vitals['pulse']} bpm, 数脉), which is an "
+            f"objective Heat indicator, yet the image-based diagnosis is a "
+            f"Cold/Yang-deficiency pattern. The measurement should take precedence."
+        )
+
+    # Slow pulse contradicts a Heat diagnosis
+    if pulse_cat == "Slow pulse" and mentions(primary, heat_words):
+        conflicts.append(
+            f"Measured pulse is slow ({vitals['pulse']} bpm, 迟脉), an objective "
+            f"Cold indicator, yet the image-based diagnosis is a Heat pattern. "
+            f"The measurement should take precedence."
+        )
+
+    # Normal vitals across the board argue for a balanced constitution
+    bp_normal = vitals.get("bp_tcm", {}).get("category") == "Normal"
+    pulse_normal = pulse_cat == "Normal pulse"
+    if bp_normal and pulse_normal and not vitals.get("red_flags"):
+        result["vitals_support_balanced"] = True
+
+    if conflicts:
+        result["vitals_conflicts"] = conflicts
+        # A contradicted diagnosis cannot be high-confidence
+        result["confidence_overall"] = min(result.get("confidence_overall", 50), 45)
+        for p in result.get("tcm_patterns", []):
+            p["confidence"] = min(p.get("confidence", 50), 50)
+        note = result.get("clinical_notes", "")
+        result["clinical_notes"] = (
+            note + " ⚠ CONFLICT: " + " ".join(conflicts)
+        ).strip()
+
+    # Surface patterns that the objective measurements independently support
+    result["objective_patterns"] = vitals.get("objective_patterns", [])
+    result["corroborated_patterns"] = vitals.get("corroborated_patterns", [])
 
     return result

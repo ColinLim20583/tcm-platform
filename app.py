@@ -14,6 +14,7 @@ from database import init_db, save_formulation, get_all_formulations, toggle_sta
 from formulation_engine import generate_formulation, generate_business_case, enrich_evidence
 from inventory_data import get_all_herbs, get_herb_by_chinese
 from vision_engine import analyze_tcm_visual, analyze_with_yolo_pipeline, enrich_visual_diagnosis, get_camera_guidance, get_pattern_herb_hints
+from vitals_engine import assess_vitals
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -340,6 +341,22 @@ def render_vision_results(diag: dict):
     face = diag.get("face", {})
     disclaimer = diag.get("disclaimer", "")
 
+    # ── Vitals conflict warning — measurements override the photo ─────────────
+    conflicts = diag.get("vitals_conflicts", [])
+    if conflicts:
+        st.markdown(
+            '<div style="background:#431407;border:2px solid #ea580c;border-radius:10px;'
+            'padding:1rem 1.2rem;margin-bottom:1rem">'
+            '<div style="color:#fdba74;font-size:15px;font-weight:700">'
+            '⚠️ Measured vitals contradict the image-based reading</div>'
+            + "".join(f'<div style="color:#fed7aa;font-size:13px;margin-top:.5rem">• {c}</div>'
+                      for c in conflicts)
+            + '<div style="color:#fff;font-size:13px;margin-top:.6rem">'
+              'Confidence has been reduced accordingly. Objective measurements are '
+              'more reliable than photo inference.</div></div>',
+            unsafe_allow_html=True
+        )
+
     # ── Honest confidence banner ──────────────────────────────────────────────
     is_balanced = ("balanced" in primary.lower()) or ("no significant" in primary.lower())
     capped = diag.get("confidence_capped_because", [])
@@ -510,6 +527,37 @@ def render_vision_results(diag: dict):
             st.markdown(" ".join(f'<span class="meta-pill blue">{h}</span>' for h in hint_herbs), unsafe_allow_html=True)
             st.caption("Indicative only — final formulation is generated from the full 551-herb inventory.")
 
+    # ── Objective vitals panel ────────────────────────────────────────────────
+    v = diag.get("vitals")
+    if v and v.get("entered"):
+        st.markdown("---")
+        st.markdown("**📊 Objective Measurements** *(carry more weight than image inference)*")
+        pt, bt, mt = v["pulse_tcm"], v["bp_tcm"], v.get("bmi_tcm")
+        oc1, oc2, oc3 = st.columns(3)
+        oc1.metric("Blood Pressure", f"{v['systolic']}/{v['diastolic']} mmHg", bt["category"])
+        oc2.metric("Pulse 脉率", f"{v['pulse']} bpm",
+                   f"{pt['category_zh']} {pt['category_en']}")
+        if mt:
+            oc3.metric("BMI", mt["bmi"], mt["category"])
+
+        if v.get("corroborated_patterns"):
+            st.markdown("**Patterns independently supported by ≥2 measurements:**")
+            st.markdown(" ".join(
+                f'<span class="meta-pill green">{p}</span>'
+                for p in v["corroborated_patterns"]
+            ), unsafe_allow_html=True)
+        elif v.get("objective_patterns"):
+            st.markdown("**Patterns suggested by measurements:**")
+            st.markdown(" ".join(
+                f'<span class="meta-pill blue">{p}</span>'
+                for p in v["objective_patterns"]
+            ), unsafe_allow_html=True)
+        else:
+            st.markdown(
+                "<span style='color:#86efac;font-size:13px'>"
+                "✓ All measurements within normal limits — no pattern indication from vitals"
+                "</span>", unsafe_allow_html=True)
+
     # ── Transparency: what was actually observed vs inferred ─────────────────
     st.markdown("---")
     raw_obs = diag.get("raw_observations", []) or []
@@ -543,11 +591,18 @@ def render_vision_results(diag: dict):
         st.markdown("")
 
         st.markdown("**🚧 What this assessment cannot tell you:**")
+        has_vitals = bool(diag.get("vitals_entered"))
         default_limits = [
-            "Pulse diagnosis (脉诊) — the second pillar of TCM diagnosis, unavailable from a photo",
             "Symptom history, sleep, digestion, emotional state (问诊 inquiry)",
             "Sound and odour assessment (闻诊)",
         ]
+        if has_vitals:
+            default_limits.insert(0,
+                "Pulse rate is captured, but the other ~27 classical pulse qualities "
+                "(floating/sinking, slippery/choppy, wiry, etc.) require palpation by a practitioner")
+        else:
+            default_limits.insert(0,
+                "Pulse diagnosis (脉诊) — no vitals were entered for this assessment")
         for l in (limitations + default_limits):
             st.markdown(f"<span style='color:#94a3b8;font-size:13px'>• {l}</span>",
                         unsafe_allow_html=True)
@@ -589,10 +644,111 @@ with tab_vision:
     st.markdown("## 🔬 Visual AI Diagnosis")
     st.markdown("*Use your computer or phone camera to scan tongue & face. AI analyses TCM patterns and pre-fills the formulation generator.*")
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # STEP 1 — OBJECTIVE VITALS (required)
+    # ══════════════════════════════════════════════════════════════════════════
+    st.markdown("### 1️⃣ Vital Signs *(required)*")
+    st.caption(
+        "Pulse rate is a genuine objective component of 脉诊 (pulse diagnosis) — "
+        "迟脉/数脉 (slow/rapid) map directly to Cold/Heat patterns. These "
+        "measurements carry more diagnostic weight than anything inferred from a photo."
+    )
+
+    with st.container():
+        vc1, vc2, vc3, vc4 = st.columns(4)
+        with vc1:
+            v_systolic = st.number_input("Systolic BP (mmHg)", min_value=60, max_value=260,
+                                         value=120, step=1,
+                                         help="The upper/larger number on your BP monitor")
+        with vc2:
+            v_diastolic = st.number_input("Diastolic BP (mmHg)", min_value=30, max_value=160,
+                                          value=80, step=1,
+                                          help="The lower/smaller number on your BP monitor")
+        with vc3:
+            v_pulse = st.number_input("Resting Pulse (bpm)", min_value=30, max_value=220,
+                                      value=72, step=1,
+                                      help="Measure after sitting quietly for 5 minutes")
+        with vc4:
+            v_age = st.number_input("Age", min_value=1, max_value=120, value=35, step=1)
+
+        vc5, vc6, vc7 = st.columns(3)
+        with vc5:
+            v_sex = st.selectbox("Sex", ["Female", "Male", "Prefer not to say"])
+        with vc6:
+            v_height = st.number_input("Height (cm)", min_value=80.0, max_value=230.0,
+                                       value=165.0, step=0.5)
+        with vc7:
+            v_weight = st.number_input("Weight (kg)", min_value=25.0, max_value=250.0,
+                                       value=65.0, step=0.5)
+
+        vitals_confirmed = st.checkbox(
+            "✓ I confirm these readings were taken at rest within the last 24 hours",
+            value=False,
+            help="Readings taken during or shortly after exercise, stress or caffeine are not valid at rest."
+        )
+
+    # Assess vitals immediately so red flags surface before any scanning
+    vitals = None
+    if vitals_confirmed:
+        vitals = assess_vitals(
+            systolic=int(v_systolic), diastolic=int(v_diastolic), pulse=int(v_pulse),
+            age=int(v_age), sex=v_sex, height_cm=float(v_height), weight_kg=float(v_weight),
+        )
+        st.session_state["vitals"] = vitals
+
+        # ── Clinical red flags — these take priority over everything ──────────
+        for flag in vitals["red_flags"]:
+            if flag["severity"] == "critical":
+                st.markdown(
+                    f'<div style="background:#450a0a;border:2px solid #dc2626;border-radius:10px;'
+                    f'padding:1rem 1.2rem;margin:.6rem 0">'
+                    f'<div style="color:#fca5a5;font-size:16px;font-weight:700">🚨 {flag["title"]}</div>'
+                    f'<div style="color:#fecaca;font-size:14px;margin-top:.5rem">{flag["message"]}</div>'
+                    f'<div style="color:#fff;font-size:14px;font-weight:600;margin-top:.6rem">'
+                    f'→ {flag["action"]}</div></div>',
+                    unsafe_allow_html=True
+                )
+            elif flag["severity"] == "high":
+                st.warning(f"**{flag['title']}**\n\n{flag['message']}\n\n→ {flag['action']}")
+            else:
+                st.info(f"**{flag['title']}**\n\n{flag['message']}\n\n→ {flag['action']}")
+
+        # ── TCM reading of the vitals ─────────────────────────────────────────
+        pt = vitals["pulse_tcm"]
+        bt = vitals["bp_tcm"]
+        mt = vitals["bmi_tcm"]
+
+        with st.expander("📈 TCM reading of your vitals", expanded=not vitals["red_flags"]):
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("Blood Pressure", f"{v_systolic}/{v_diastolic}", bt["category"])
+            mc2.metric("Pulse 脉率", f"{v_pulse} bpm",
+                       f"{pt['category_zh']} {pt['category_en']}")
+            if mt:
+                mc3.metric("BMI", mt["bmi"], mt["category"])
+
+            st.markdown(f"**脉诊 Pulse:** {pt['tcm_significance']}")
+            if pt.get("note"):
+                st.caption(pt["note"])
+            st.markdown(f"**Blood pressure:** {bt['tcm_significance']}")
+            if mt:
+                st.markdown(f"**BMI:** {mt['note']}")
+
+            if vitals["corroborated_patterns"]:
+                st.markdown("**Patterns supported by more than one measurement:**")
+                st.markdown(" ".join(
+                    f'<span class="meta-pill green">{p}</span>'
+                    for p in vitals["corroborated_patterns"]
+                ), unsafe_allow_html=True)
+    else:
+        st.info("👆 Enter your vital signs and tick the confirmation box to unlock the camera scan.")
+
+    st.markdown("---")
+    st.markdown("### 2️⃣ Camera Scan")
+
     col_left, col_right = st.columns([1, 1])
 
     with col_left:
-        st.markdown("### 📷 Camera Scan")
+        st.markdown("#### 📷 Capture")
 
         scan_type = st.radio(
             "Scan Type",
@@ -640,47 +796,70 @@ with tab_vision:
             st.image(image_bytes, caption="Uploaded image", use_container_width=True)
 
         if image_bytes:
-            if not api_key:
+            if not vitals_confirmed:
+                st.warning("⚠️ Enter and confirm your vital signs above before running analysis.")
+            elif not api_key:
                 st.error("⚠️ Please enter your Anthropic API key in the sidebar to run analysis.")
             else:
-                # Detect pipeline mode
+                # ── Detector status ───────────────────────────────────────────
                 try:
                     from tongue_detector import get_detector
                     _detector = get_detector()
+                    _diag_info = _detector.diagnostics()
                     yolo_ready = _detector.is_ready
-                except Exception:
+                except Exception as e:
                     _detector = None
+                    _diag_info = {"ready": False, "load_error": f"{type(e).__name__}: {e}"}
                     yolo_ready = False
 
                 if yolo_ready:
                     st.markdown(
-                        '<div style="background:#052e16;border:1px solid #166534;border-radius:8px;padding:.5rem 1rem;'
-                        'font-size:13px;color:#86efac;margin-bottom:.5rem">'
-                        '⚡ <b>YOLOv8 + Claude Pipeline Active</b> — Trained on 19,585 tongue images'
-                        '</div>',
+                        f'<div style="background:#052e16;border:1px solid #166534;border-radius:8px;'
+                        f'padding:.5rem 1rem;font-size:13px;color:#86efac;margin-bottom:.5rem">'
+                        f'⚡ <b>YOLOv8 detector loaded</b> — {_diag_info["num_classes"]} classes, '
+                        f'validated mAP50 {_diag_info["validated_map50"]}'
+                        f'</div>',
                         unsafe_allow_html=True
                     )
                 else:
                     st.markdown(
-                        '<div style="background:#0c1f3a;border:1px solid #1e40af;border-radius:8px;padding:.5rem 1rem;'
-                        'font-size:13px;color:#93c5fd;margin-bottom:.5rem">'
-                        '🧠 <b>Claude Vision Mode</b> — Train YOLOv8 model to enable full pipeline'
-                        '</div>',
+                        f'<div style="background:#450a0a;border:1px solid #dc2626;border-radius:8px;'
+                        f'padding:.7rem 1rem;font-size:13px;color:#fca5a5;margin-bottom:.5rem">'
+                        f'✗ <b>YOLOv8 detector NOT loaded</b><br>'
+                        f'<span style="font-size:12px;color:#fecaca">'
+                        f'{_diag_info.get("load_error","Unknown reason")}</span>'
+                        f'</div>',
                         unsafe_allow_html=True
                     )
 
-                analyze_btn = st.button("🧠 Analyse with AI Vision", type="primary", use_container_width=True)
+                with st.expander("🔧 Detector diagnostics"):
+                    st.json(_diag_info)
+
+                strict_yolo = st.checkbox(
+                    "Require YOLO detection (fail rather than fall back to Claude-only)",
+                    value=True,
+                    help="Guarantees you always know whether the trained model actually ran."
+                )
+
+                analyze_btn = st.button("🧠 Run Full Analysis", type="primary",
+                                        use_container_width=True, disabled=not yolo_ready and strict_yolo)
+                if not yolo_ready and strict_yolo:
+                    st.caption("Analysis is blocked because the detector is unavailable. "
+                               "Untick the box above to run Claude-only analysis instead.")
+
                 if analyze_btn:
                     spinner_msg = (
-                        "⚡ YOLOv8 detecting tongue features → Claude synthesising TCM diagnosis..."
+                        "⚡ YOLOv8 detecting tongue features → merging vitals → Claude synthesising..."
                         if yolo_ready else
-                        "🔬 ChemiGranVision analysing tongue & face patterns..."
+                        "🔬 Analysing image and vitals..."
                     )
                     with st.spinner(spinner_msg):
                         try:
                             diag = analyze_with_yolo_pipeline(
                                 image_bytes, scan_type, api_key,
-                                detector=_detector if yolo_ready else None
+                                detector=_detector if yolo_ready else None,
+                                vitals=vitals,
+                                require_yolo=strict_yolo,
                             )
                             st.session_state["last_vision_result"] = diag
                             st.session_state["vision_condition"] = diag.get("suggested_condition_input", "")
@@ -688,6 +867,18 @@ with tab_vision:
                             st.session_state["vision_demographic"] = diag.get("suggested_demographic", "")
                             diag["scan_type"] = scan_type
                             save_visual_diagnosis(diag)
+
+                            # YOLO ran but detected nothing — meaningful negative result
+                            if diag.get("yolo_ran_found_nothing"):
+                                st.markdown(
+                                    '<div style="background:#052e16;border:1px solid #166534;'
+                                    'border-radius:8px;padding:.7rem 1rem;font-size:13px;'
+                                    'color:#86efac;margin:.5rem 0">'
+                                    '✅ <b>Detector ran and found no abnormal tongue features</b><br>'
+                                    '<span style="font-size:12px">This is meaningful negative '
+                                    'evidence consistent with a normal, healthy tongue.</span></div>',
+                                    unsafe_allow_html=True
+                                )
 
                             # Show YOLO annotated image if available
                             annotated = diag.get("annotated_image")
@@ -699,23 +890,37 @@ with tab_vision:
                                 yolo_dets = diag.get("yolo_detections", [])
                                 if yolo_dets:
                                     st.markdown("**Detected Features:**")
+                                    rel_colors = {"validated": "#22c55e",
+                                                  "moderate": "#eab308",
+                                                  "low confidence class": "#ef4444"}
                                     rows = ""
                                     for d in yolo_dets:
+                                        lbl = d.get("reliability_label", "")
+                                        rc = rel_colors.get(lbl, "#64748b")
                                         rows += (
                                             f"<tr>"
                                             f"<td>{d['zh']}</td>"
                                             f"<td style='color:#94a3b8;font-size:12px'>{d['class_name']}</td>"
                                             f"<td style='color:#7ec8e3;font-weight:600'>{d['confidence']:.0f}%</td>"
+                                            f"<td><span style='color:{rc};font-size:11px'>"
+                                            f"{lbl} ({d.get('reliability','?')})</span></td>"
                                             f"<td style='font-size:12px;color:#64748b'>{d['tcm_significance']}</td>"
                                             f"</tr>"
                                         )
                                     st.markdown(f"""
                                     <table class="herb-table">
                                       <thead><tr>
-                                        <th>Feature (中文)</th><th>Class</th><th>Confidence</th><th>TCM Significance</th>
+                                        <th>Feature (中文)</th><th>Class</th><th>Detection</th>
+                                        <th>Class reliability</th><th>TCM Significance</th>
                                       </tr></thead>
                                       <tbody>{rows}</tbody>
                                     </table>""", unsafe_allow_html=True)
+                                    st.caption(
+                                        "Class reliability is the measured mAP50 for that class on the "
+                                        "held-out test set. Only white-coating (0.94) and yellow-coating "
+                                        "(0.82) are strongly validated; treat low-reliability detections "
+                                        "as hints, not findings."
+                                    )
 
                                 # YOLO patterns
                                 yolo_patterns = diag.get("yolo_patterns", [])
@@ -791,6 +996,28 @@ with tab_formulation:
     st.markdown("## 🧪 AI Formulation Generator")
     st.markdown("*Generate evidence-based TCM granule formulas using Chemigran's 551-herb inventory.*")
 
+    # ── Safety gate: block formulation on critical vitals ─────────────────────
+    _v = st.session_state.get("vitals")
+    formulation_blocked = bool(_v and _v.get("blocks_formulation"))
+    if formulation_blocked:
+        crit = [f for f in _v.get("red_flags", []) if f["severity"] == "critical"]
+        st.markdown(
+            '<div style="background:#450a0a;border:2px solid #dc2626;border-radius:10px;'
+            'padding:1.2rem 1.4rem;margin-bottom:1rem">'
+            '<div style="color:#fca5a5;font-size:17px;font-weight:700">'
+            '🚨 Formulation disabled — your readings need medical attention</div>'
+            + "".join(
+                f'<div style="color:#fecaca;font-size:14px;margin-top:.6rem">'
+                f'<b>{f["title"]}</b><br>{f["message"]}<br>'
+                f'<span style="color:#fff;font-weight:600">→ {f["action"]}</span></div>'
+                for f in crit)
+            + '<div style="color:#fecaca;font-size:13px;margin-top:.8rem;font-style:italic">'
+              'Herbal wellness products are not appropriate while readings are in this '
+              'range. Please seek medical care first — you can return here afterwards.'
+              '</div></div>',
+            unsafe_allow_html=True
+        )
+
     # Check if vision pre-fill is available
     vision_prefill = st.session_state.get("vision_to_formula", False)
     if vision_prefill:
@@ -852,8 +1079,34 @@ with tab_formulation:
         with st.expander("🔬 Vision Diagnosis Context (sent to AI)"):
             st.write(vision_context_str)
 
-    if st.button("🌿 Generate Formulation", type="primary", use_container_width=True):
-        if not condition:
+    # Append objective vitals to the AI context
+    if _v and _v.get("entered"):
+        vision_context_str += (
+            f"\n\nOBJECTIVE VITALS: BP {_v['systolic']}/{_v['diastolic']} mmHg "
+            f"({_v['bp_tcm']['category']}), pulse {_v['pulse']} bpm "
+            f"({_v['pulse_tcm']['category_zh']} {_v['pulse_tcm']['category_en']}), "
+            f"age {_v['age']}, {_v['sex']}."
+        )
+        if _v.get("bmi_tcm"):
+            vision_context_str += f" BMI {_v['bmi_tcm']['bmi']} ({_v['bmi_tcm']['category']})."
+        if _v.get("corroborated_patterns"):
+            vision_context_str += (
+                f" Patterns supported by multiple objective measurements: "
+                f"{', '.join(_v['corroborated_patterns'])}."
+            )
+        non_critical = [f for f in _v.get("red_flags", []) if f["severity"] != "critical"]
+        if non_critical:
+            vision_context_str += (
+                " CAUTION — the following require conservative formulation and "
+                "explicit safety notes: "
+                + "; ".join(f["title"] for f in non_critical) + "."
+            )
+
+    if st.button("🌿 Generate Formulation", type="primary", use_container_width=True,
+                 disabled=formulation_blocked):
+        if formulation_blocked:
+            st.error("Formulation is disabled while your vitals are in the critical range.")
+        elif not condition:
             st.error("Please enter a health condition / symptoms")
         elif not api_key:
             st.error("Please enter your Anthropic API key in the sidebar")
