@@ -9,7 +9,7 @@ import csv
 import io
 from datetime import datetime
 
-from config import APP_TITLE, APP_SUBTITLE, VERSION, COMPANY, ANTHROPIC_API_KEY, ANTHROPIC_KEY_SOURCE
+from config import APP_TITLE, APP_SUBTITLE, VERSION, COMPANY, ANTHROPIC_API_KEY
 from database import init_db, save_formulation, get_all_formulations, toggle_star, delete_formulation, search_formulations, save_knowledge_entry, get_knowledge_entries, get_stats, save_visual_diagnosis
 from formulation_engine import generate_formulation, generate_business_case, enrich_evidence
 from inventory_data import get_all_herbs, get_herb_by_chinese
@@ -138,14 +138,8 @@ with st.sidebar:
             type="password",
             help="Tick 'Show key' on mobile to paste and verify your key"
         )
-    if api_key:
-        if ANTHROPIC_KEY_SOURCE == "Streamlit secrets":
-            st.caption(f"🔒 Key loaded automatically from {ANTHROPIC_KEY_SOURCE}")
-        elif ANTHROPIC_KEY_SOURCE == "environment / .env":
-            st.caption(f"🔒 Key loaded from {ANTHROPIC_KEY_SOURCE}")
-    else:
+    if not api_key:
         st.warning("⚠️ Add your API key to enable AI features")
-        st.caption(f"No stored key found — {ANTHROPIC_KEY_SOURCE}")
 
     st.divider()
     st.markdown("### 📊 Knowledge Base Stats")
