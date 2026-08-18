@@ -104,10 +104,10 @@ st.markdown("""
     display: flex !important;
   }
   .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
-  /* The header is left completely alone. Every attempt to restyle it — hiding
-     it, zeroing its height, repositioning its children — took the sidebar
-     toggle with it. Streamlit's default header is the only reliable way to
-     keep that button on both desktop and mobile, so the Fork/deploy bar stays. */
+  /* Hide the Fork/GitHub/Deploy menu only. The <header> element itself is left
+     untouched on purpose — the sidebar toggle is one of its children, so any
+     rule that hides or collapses the header takes the toggle with it. */
+  [data-testid="stToolbar"] { display: none !important; }
 
   .block-container { padding-top: 1rem !important; }
 
