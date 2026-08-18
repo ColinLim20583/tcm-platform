@@ -164,46 +164,19 @@ class TongueDetector:
 
         try:
             from ultralytics import YOLO
-        except ModuleNotFoundError as e:
-            # The Python package genuinely isn't there.
+        except ImportError as e:
             self.load_error = (
-                f"Python package missing: {e.name}. "
-                f"Add it to requirements.txt (locally: pip install ultralytics torch torchvision)"
+                f"ultralytics is not installed ({e}). Install with: "
+                f"pip install ultralytics torch torchvision"
             )
             print(f"✗ TongueDetector: {self.load_error}")
             return
-        except ImportError as e:
-            # The package IS installed, but a shared library it links against is absent.
-            # Typical on slim Linux images (Streamlit Cloud, Docker) where OpenCV's
-            # system dependencies aren't part of the base container.
-            msg = str(e)
-            if ".so" in msg:
-                missing = msg.split(":")[0].strip()
-                apt = {
-                    "libGL.so.1": "libgl1",
-                    "libgthread-2.0.so.0": "libglib2.0-0",
-                    "libglib-2.0.so.0": "libglib2.0-0",
-                    "libSM.so.6": "libsm6",
-                    "libXext.so.6": "libxext6",
-                    "libXrender.so.1": "libxrender1",
-                }.get(missing)
-                hint = f"add '{apt}' to packages.txt" if apt else (
-                    f"find the apt package providing {missing} and add it to packages.txt"
-                )
-                self.load_error = (
-                    f"System library missing: {missing}. ultralytics is installed, but a "
-                    f"shared library it needs is not — {hint}, then redeploy. "
-                    f"(This is not a pip problem.)"
-                )
-            else:
-                self.load_error = (
-                    f"ultralytics failed to import: {type(e).__name__}: {e}. "
-                    f"Often an OpenCV binary mismatch — try opencv-python-headless."
-                )
-            print(f"✗ TongueDetector: {self.load_error}")
-            return
         except Exception as e:
-            self.load_error = f"Unexpected error importing ultralytics: {type(e).__name__}: {e}"
+            self.load_error = (
+                f"ultralytics failed to import: {type(e).__name__}: {e}. "
+                f"This is usually an OpenCV binary incompatibility — try "
+                f"pip install opencv-python-headless"
+            )
             print(f"✗ TongueDetector: {self.load_error}")
             return
 
