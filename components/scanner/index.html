@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: "Source Sans Pro", system-ui, sans-serif;
+         background:#0f1923; color:#e2e8f0; }
+  #wrap { position:relative; width:100%; max-width:520px; margin:0 auto; }
+  #stage { position:relative; border-radius:16px; overflow:hidden;
+           background:#000; aspect-ratio:3/4; }
+  video { width:100%; height:100%; object-fit:cover; display:block; transform:scaleX(-1); }
+
+  /* guide outline */
+  #guide { position:absolute; inset:0; pointer-events:none; }
+  #guide .shape { position:absolute; border:2px dashed #7ec8e3aa; border-radius:50%;
+                  left:50%; transform:translateX(-50%); transition:all .35s ease; }
+  #guide.face  .shape { width:58%; height:52%; top:12%; }
+  #guide.tongue .shape { width:44%; height:30%; top:38%; border-radius:44%; }
+
+  /* scan line */
+  #scanline { position:absolute; left:0; right:0; height:3px; top:0; display:none;
+              background:linear-gradient(90deg,transparent,#7ec8e3,#2563eb,#7ec8e3,transparent);
+              box-shadow:0 0 18px 4px #2563eb88; }
+  #scanline.on { display:block; }
+  #sweepglow { position:absolute; left:0; right:0; top:0; height:0; display:none;
+               background:linear-gradient(180deg,#2563eb22,transparent); }
+
+  /* status */
+  #status { position:absolute; left:0; right:0; bottom:0; padding:.7rem .9rem;
+            background:linear-gradient(0deg,#000d,#0000); font-size:13px; }
+  #phase { font-weight:700; color:#7ec8e3; font-size:14px; }
+  #hint  { color:#cbd5e1; margin-top:.15rem; }
+  #bad   { color:#fca5a5; margin-top:.2rem; font-size:12.5px; min-height:1.1em; }
+
+  #meters { display:flex; gap:.4rem; margin-top:.45rem; }
+  .m { flex:1; }
+  .m .lbl { font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:#64748b; }
+  .m .bar { height:4px; border-radius:3px; background:#1e293b; margin-top:2px; overflow:hidden; }
+  .m .fill { height:100%; width:0%; background:#ef4444; transition:width .15s, background .15s; }
+  .m.ok .fill { background:#22c55e; }
+
+  #count { position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+           font-size:88px; font-weight:800; color:#7ec8e3; text-shadow:0 0 30px #2563eb; }
+  #shots { display:flex; gap:.5rem; margin-top:.6rem; }
+  #shots img { width:76px; border-radius:8px; border:1px solid #2563eb66; }
+  #btns { display:flex; gap:.5rem; margin-top:.6rem; }
+  button { flex:1; padding:.6rem; border-radius:8px; border:1px solid #2563eb44;
+           background:#1e3a4f; color:#7ec8e3; font-size:13px; cursor:pointer; }
+  button:hover { background:#2563eb; color:#fff; }
+  #err { color:#fca5a5; font-size:13px; padding:.8rem; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <video id="v" autoplay playsinline muted></video>
+    <div id="guide" class="face"><div class="shape"></div></div>
+    <div id="sweepglow"></div>
+    <div id="scanline"></div>
+    <div id="count"></div>
+    <div id="status">
+      <div id="phase">Starting camera…</div>
+      <div id="hint"></div>
+      <div id="bad"></div>
+      <div id="meters">
+        <div class="m" id="m-light"><div class="lbl">Light</div><div class="bar"><div class="fill"></div></div></div>
+        <div class="m" id="m-focus"><div class="lbl">Focus</div><div class="bar"><div class="fill"></div></div></div>
+        <div class="m" id="m-still"><div class="lbl">Steady</div><div class="bar"><div class="fill"></div></div></div>
+        <div class="m" id="m-subject"><div class="lbl">Position</div><div class="bar"><div class="fill"></div></div></div>
+      </div>
+    </div>
+  </div>
+  <div id="shots"></div>
+  <div id="btns">
+    <button id="restart">↻ Restart scan</button>
+    <button id="manual">📷 Capture now</button>
+  </div>
+  <div id="err"></div>
+</div>
+
+<script>
+// ── Streamlit component protocol (hand-rolled; no build step) ───────────────
+function send(type, data){ window.parent.postMessage(Object.assign({isStreamlitMessage:true,type:type},data||{}), "*"); }
+function setValue(v){ send("streamlit:setComponentValue", {value:v, dataType:"json"}); }
+function setHeight(h){ send("streamlit:setFrameHeight", {height:h}); }
+
+let SCAN_TYPE = "full";
+let started = false;
+
+window.addEventListener("message", (e) => {
+  if (!e.data || e.data.type !== "streamlit:render") return;
+  const args = e.data.args || {};
+  SCAN_TYPE = args.scan_type || "full";
+  if (!started) { started = true; init(); }
+});
+send("streamlit:componentReady", {apiVersion:1});
+setHeight(700);
+
+// ── Elements ────────────────────────────────────────────────────────────────
+const V = document.getElementById("v");
+const guide = document.getElementById("guide");
+const line = document.getElementById("scanline");
+const glow = document.getElementById("sweepglow");
+const phaseEl = document.getElementById("phase");
+const hintEl = document.getElementById("hint");
+const badEl = document.getElementById("bad");
+const countEl = document.getElementById("count");
+const shotsEl = document.getElementById("shots");
+const errEl = document.getElementById("err");
+
+const meters = {
+  light: document.getElementById("m-light"),
+  focus: document.getElementById("m-focus"),
+  still: document.getElementById("m-still"),
+  subject: document.getElementById("m-subject"),
+};
+
+// ── Analysis canvas (small, for speed) ──────────────────────────────────────
+const AC = document.createElement("canvas"); AC.width = 192; AC.height = 256;
+const actx = AC.getContext("2d", {willReadFrequently:true});
+let prevGray = null;
+
+// Thresholds — tuned to be strict enough to reject an unusable frame but not
+// so strict that a normally-lit room can never pass.
+const T = { lightLo:55, lightHi:205, focus:110, still:14, subject:0.10 };
+
+let faceDetector = null;
+if ("FaceDetector" in window) {
+  try { faceDetector = new FaceDetector({fastMode:true, maxDetectedFaces:1}); } catch(e){}
+}
+
+function analyse(){
+  actx.drawImage(V, 0, 0, AC.width, AC.height);
+  const d = actx.getImageData(0,0,AC.width,AC.height).data;
+  const n = AC.width*AC.height;
+  const gray = new Float32Array(n);
+  let sum = 0;
+  for (let i=0, p=0; i<n; i++, p+=4){
+    const g = 0.299*d[p] + 0.587*d[p+1] + 0.114*d[p+2];
+    gray[i] = g; sum += g;
+  }
+  const brightness = sum/n;
+
+  // Sharpness: variance of a 4-neighbour Laplacian
+  let lsum=0, lsq=0, c=0;
+  for (let y=1;y<AC.height-1;y++){
+    for (let x=1;x<AC.width-1;x++){
+      const i=y*AC.width+x;
+      const l = 4*gray[i]-gray[i-1]-gray[i+1]-gray[i-AC.width]-gray[i+AC.width];
+      lsum+=l; lsq+=l*l; c++;
+    }
+  }
+  const sharpness = (lsq/c) - Math.pow(lsum/c,2);
+
+  // Stability: mean absolute difference vs previous frame
+  let motion = 0;
+  if (prevGray){
+    let s=0; for (let i=0;i<n;i++) s += Math.abs(gray[i]-prevGray[i]);
+    motion = s/n;
+  } else motion = 999;
+  prevGray = gray;
+
+  // Subject presence: skin-tone coverage inside the guide region.
+  // Crude, but it distinguishes "a person is framed" from "an empty room",
+  // and it works on every browser, unlike the FaceDetector API.
+  let skin=0, tot=0;
+  const x0=Math.round(AC.width*0.22), x1=Math.round(AC.width*0.78);
+  const y0=Math.round(AC.height*(SCAN_PHASE==="tongue"?0.32:0.08));
+  const y1=Math.round(AC.height*(SCAN_PHASE==="tongue"?0.72:0.68));
+  for (let y=y0;y<y1;y++) for (let x=x0;x<x1;x++){
+    const p=(y*AC.width+x)*4, r=d[p], g=d[p+1], b=d[p+2];
+    tot++;
+    if (r>70 && g>40 && b>25 && r>g && r>b && (r-Math.min(g,b))>14) skin++;
+  }
+  const subject = tot ? skin/tot : 0;
+
+  return {brightness, sharpness, motion, subject};
+}
+
+function meter(el, val, ok){
+  el.classList.toggle("ok", ok);
+  el.querySelector(".fill").style.width = Math.max(4, Math.min(100, val))+"%";
+  return ok;
+}
+
+function grade(m){
+  const okLight = meter(meters.light, (m.brightness/255)*100,
+                        m.brightness>=T.lightLo && m.brightness<=T.lightHi);
+  const okFocus = meter(meters.focus, (m.sharpness/(T.focus*2))*100, m.sharpness>=T.focus);
+  const okStill = meter(meters.still, 100-Math.min(100,(m.motion/T.still)*100), m.motion<=T.still);
+  const okSubj  = meter(meters.subject, (m.subject/(T.subject*2))*100, m.subject>=T.subject);
+
+  const problems = [];
+  if (!okLight) problems.push(m.brightness<T.lightLo ? "too dark — find brighter, even light"
+                                                     : "too bright — move away from the light source");
+  if (!okFocus) problems.push("blurry — hold the phone steady and let it focus");
+  if (!okStill) problems.push("moving — keep still");
+  if (!okSubj)  problems.push(SCAN_PHASE==="tongue"
+      ? "position your tongue inside the guide" : "fit your face inside the guide");
+  return {ok: okLight&&okFocus&&okStill&&okSubj, problems};
+}
+
+// ── Capture at the camera's native resolution ───────────────────────────────
+function grabFullRes(){
+  const c = document.createElement("canvas");
+  c.width = V.videoWidth; c.height = V.videoHeight;
+  const g = c.getContext("2d");
+  g.translate(c.width, 0); g.scale(-1, 1);   // undo the preview mirror
+  g.drawImage(V, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.95);
+}
+
+// ── Scan sequence ───────────────────────────────────────────────────────────
+let SCAN_PHASE = "face";
+let phases = [];
+const captured = {};
+let sweeping = false;
+
+const SWEEP_MS = 2600;
+const PASS_RATIO = 0.85;   // share of the sweep that must be clean
+
+function phaseText(){
+  if (SCAN_PHASE==="face")  return ["Scanning face", "Look straight ahead, neutral expression"];
+  return ["Scanning tongue", "Open your mouth and extend your tongue fully"];
+}
+
+function startSweep(){
+  if (sweeping) return;
+  sweeping = true;
+  const [p,h] = phaseText();
+  phaseEl.textContent = p; hintEl.textContent = h; badEl.textContent = "";
+  guide.className = SCAN_PHASE;
+  line.classList.add("on"); glow.style.display="block";
+
+  const t0 = performance.now();
+  let good = 0, total = 0, lastProblems = [];
+
+  function frame(now){
+    const t = (now - t0) / SWEEP_MS;
+    if (t >= 1){ line.classList.remove("on"); glow.style.display="none"; finish(); return; }
+
+    line.style.top = (t*100)+"%";
+    glow.style.height = (t*100)+"%";
+
+    const g = grade(analyse());
+    total++; if (g.ok) good++; else lastProblems = g.problems;
+    badEl.textContent = g.ok ? "" : g.problems[0];
+
+    requestAnimationFrame(frame);
+  }
+
+  function finish(){
+    sweeping = false;
+    if (total && good/total >= PASS_RATIO){ countdownAndShoot(); }
+    else {
+      badEl.textContent = "Scan unclear — " + (lastProblems[0] || "reposition and hold still");
+      phaseEl.textContent = "Reposition, scanning again…";
+      setTimeout(startSweep, 1400);
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+function countdownAndShoot(){
+  let n = 3;
+  countEl.style.display = "flex";
+  const tick = () => {
+    if (n === 0){
+      countEl.style.display = "none";
+      captured[SCAN_PHASE] = grabFullRes();
+      const im = document.createElement("img"); im.src = captured[SCAN_PHASE];
+      shotsEl.appendChild(im);
+      nextPhase();
+      return;
+    }
+    countEl.textContent = n--; setTimeout(tick, 700);
+  };
+  tick();
+}
+
+function nextPhase(){
+  const i = phases.indexOf(SCAN_PHASE);
+  if (i < phases.length - 1){
+    SCAN_PHASE = phases[i+1];
+    prevGray = null;
+    phaseEl.textContent = "Ready for the next step";
+    hintEl.textContent = SCAN_PHASE === "tongue"
+      ? "Now open your mouth and extend your tongue" : "";
+    setTimeout(startSweep, 1600);
+  } else {
+    phaseEl.textContent = "✓ Scan complete";
+    hintEl.textContent = "Sending for analysis…";
+    badEl.textContent = "";
+    setValue({
+      face: captured.face || null,
+      tongue: captured.tongue || null,
+      width: V.videoWidth, height: V.videoHeight,
+      done: true, ts: Date.now()
+    });
+  }
+}
+
+// ── Init ────────────────────────────────────────────────────────────────────
+async function init(){
+  phases = SCAN_TYPE === "face" ? ["face"]
+         : SCAN_TYPE === "tongue" ? ["tongue"]
+         : ["face","tongue"];
+  SCAN_PHASE = phases[0];
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode:"user",
+               width:{ideal:1920}, height:{ideal:1080},
+               frameRate:{ideal:30} },
+      audio: false
+    });
+    V.srcObject = stream;
+    await V.play();
+    phaseEl.textContent = "Get into position…";
+    setTimeout(startSweep, 1500);
+  } catch (e){
+    errEl.textContent = "Camera unavailable: " + e.message +
+      " — check the browser has camera permission for this page, then reload.";
+    phaseEl.textContent = "Camera blocked";
+  }
+}
+
+document.getElementById("restart").onclick = () => {
+  shotsEl.innerHTML = ""; for (const k in captured) delete captured[k];
+  SCAN_PHASE = phases[0]; prevGray = null; sweeping = false; startSweep();
+};
+document.getElementById("manual").onclick = () => {
+  if (!V.videoWidth) return;
+  captured[SCAN_PHASE] = grabFullRes();
+  const im = document.createElement("img"); im.src = captured[SCAN_PHASE];
+  shotsEl.appendChild(im);
+  sweeping = false; line.classList.remove("on"); glow.style.display="none";
+  nextPhase();
+};
+</script>
+</body>
+</html>

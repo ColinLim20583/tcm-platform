@@ -930,29 +930,60 @@ with tab_vision:
             st.session_state.cap_nonce = 0   # bumped to reset the widgets on retake
 
         if st.session_state.cap_bytes is None:
-            # Camera input — works on desktop webcam AND mobile phone camera
             st.markdown("#### 📸 Capture Image")
-            st.caption("On mobile: tap to open your phone camera. On desktop: uses webcam.")
-            camera_image = st.camera_input(
-                label="Point camera at tongue / face and capture",
-                key=f"cam_{st.session_state.cap_nonce}",
-                help="Works on desktop (webcam) and mobile phone (front or rear camera)"
+
+            mode = st.radio(
+                "Capture mode",
+                ["🔦 Guided auto-scan", "📷 Manual capture"],
+                horizontal=True,
+                help="Auto-scan sweeps a scan line over the frame and captures "
+                     "only when lighting, focus, steadiness and position are all good.",
             )
 
-            # Alternative: file upload
+            if mode.startswith("🔦"):
+                st.caption(
+                    "Hold still inside the guide. The scan line sweeps top to "
+                    "bottom — if anything is unclear it will tell you what to "
+                    "fix and sweep again."
+                )
+                try:
+                    import scanner_component
+                    shot = scanner_component.scan(scan_type=scan_type, key=f"scan_{st.session_state.cap_nonce}")
+                    if shot:
+                        img = scanner_component.primary_image(shot)
+                        if img:
+                            st.session_state.cap_bytes = img
+                            st.session_state.cap_label = (
+                                f"Auto-captured · {shot.get('width')}×{shot.get('height')}"
+                            )
+                            if shot.get("face") and shot.get("tongue"):
+                                st.session_state.cap_face = shot["face"]
+                            st.rerun()
+                except Exception as e:
+                    st.error(f"Guided scan unavailable: {e}")
+                    st.caption("Switch to Manual capture to continue.")
+
+            else:
+                st.caption("On mobile: tap to open your phone camera. On desktop: uses webcam.")
+                camera_image = st.camera_input(
+                    label="Point camera at tongue / face and capture",
+                    key=f"cam_{st.session_state.cap_nonce}",
+                    help="Works on desktop (webcam) and mobile phone (front or rear camera)",
+                )
+                if camera_image is not None:
+                    st.session_state.cap_bytes = camera_image.getvalue()
+                    st.session_state.cap_label = "Captured image"
+                    st.rerun()
+
+            # Upload stays available in both modes
             st.markdown("*— or —*")
             uploaded_file = st.file_uploader(
                 "Upload a photo instead",
                 type=["jpg", "jpeg", "png", "webp"],
                 key=f"up_{st.session_state.cap_nonce}",
-                help="Upload an existing photo of your tongue or face"
+                help="Upload an existing photo of your tongue or face",
             )
-
-            if camera_image is not None:
-                st.session_state.cap_bytes = camera_image.getvalue()
-                st.session_state.cap_label = "Captured image"
-                st.rerun()
-            elif uploaded_file is not None:
+            if uploaded_file is not None:
                 st.session_state.cap_bytes = uploaded_file.read()
                 st.session_state.cap_label = "Uploaded image"
                 st.rerun()

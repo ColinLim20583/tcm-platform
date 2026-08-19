@@ -124,10 +124,17 @@ def parse_model_json(raw: str) -> tuple[dict | None, str]:
 
 # ─── Image pre-processing ────────────────────────────────────────────────────
 
-def preprocess_image(image_bytes: bytes, max_size: int = 1024) -> bytes:
+def preprocess_image(image_bytes: bytes, max_size: int = 1568) -> bytes:
     """
     Resize, sharpen and normalise an image for best vision API results.
     Returns JPEG bytes.
+
+    1568px is the long edge Claude's vision encoder works to — anything larger
+    is downscaled server-side, so sending more costs tokens and gains nothing,
+    while sending less throws away detail for free. The previous 1024 was
+    discarding roughly a third of the linear resolution before analysis, which
+    matters most for exactly the features the detector struggles with: coating
+    texture, cracks and red dots.
     """
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
