@@ -132,6 +132,8 @@ def _css():
         border:1px solid #1e3a5f; border-radius:12px; padding:.9rem 1rem;
         background:#0d1e30; height:100%;
       }
+      .cs-goal.picked { border-color:#2563eb; background:#10294a;
+                        box-shadow:0 0 0 1px #2563eb55; }
       .cs-goal .g-t { font-size:15px; font-weight:700; color:#7ec8e3; }
       .cs-goal .g-d { font-size:12px; color:#94a3b8; margin-top:.25rem; line-height:1.45; }
       .cs-pick {
@@ -176,11 +178,51 @@ def _indications_for_tags(tags):
     return out or list(tags)
 
 
+def _selected_keys():
+    return st.session_state.setdefault("cs_selected", [])
+
+
+def _toggle(key):
+    sel = _selected_keys()
+    if key in sel:
+        sel.remove(key)
+    else:
+        sel.append(key)          # order preserved — first pick is the primary
+    st.session_state.cs_selected = sel
+
+
+def _build_goal():
+    """Assemble the chosen goals into the structure the rest of the flow uses."""
+    sel = _selected_keys()
+    chosen = [g for g in GOALS if g[0] in sel]
+    chosen.sort(key=lambda g: sel.index(g[0]))
+
+    tags, inds = [], []
+    for _k, _i, _t, _d, _grp, gtags in chosen:
+        for t in gtags:
+            if t not in tags:
+                tags.append(t)
+    for text in _indications_for_tags(tags):
+        if text not in inds:
+            inds.append(text)
+
+    titles = [g[2].replace("&amp;", "&") for g in chosen]
+    return {
+        "keys": [g[0] for g in chosen],
+        "titles": titles,
+        "title": " + ".join(titles),
+        "primary": titles[0] if titles else "",
+        "tags": tags,
+        "indications": inds,
+    }
+
+
 def _step_goal():
     st.markdown("#### 1️⃣ What would you like to work on?")
     st.caption(
         f"{len(GOALS)} areas, each backed by products in the Chemigran inventory. "
-        "Pick the one that matters most right now — you can change it later."
+        "Choose as many as apply — the first one you pick is treated as the "
+        "primary concern."
     )
 
     query = st.text_input(
@@ -209,21 +251,21 @@ def _step_goal():
         )
         cols = st.columns(3)
         for i, (key, icon, title, desc, _grp, tags) in enumerate(items):
+            picked = key in _selected_keys()
             with cols[i % 3]:
                 st.markdown(
-                    f'<div class="cs-goal"><div class="g-t">{icon} {title}</div>'
+                    f'<div class="cs-goal{" picked" if picked else ""}">'
+                    f'<div class="g-t">{icon} {title}</div>'
                     f'<div class="g-d">{desc}</div></div>',
                     unsafe_allow_html=True,
                 )
-                if st.button("Choose", key=f"goal_{key}", use_container_width=True):
-                    st.session_state.cs_goal = {
-                        "key": key,
-                        "title": title.replace("&amp;", "&"),
-                        "tags": tags,
-                        "indications": _indications_for_tags(tags),
-                    }
-                    st.session_state.cs_step = 2
-                    st.rerun()
+                st.button(
+                    ("✓ Selected" if picked else "Select"),
+                    key=f"goal_{key}",
+                    use_container_width=True,
+                    type="primary" if picked else "secondary",
+                    on_click=_toggle, args=(key,),
+                )
 
     if query and not shown:
         st.info(
@@ -231,13 +273,47 @@ def _step_goal():
             "area — the scan refines the recommendation from there."
         )
 
+    # ── Selection summary and continue ────────────────────────────────────────
+    sel = _selected_keys()
+    if sel:
+        goal = _build_goal()
+        st.divider()
+        st.markdown(
+            "**Selected:** " + " ".join(
+                f'<span class="meta-pill">{t}</span>' for t in goal["titles"]
+            ),
+            unsafe_allow_html=True,
+        )
+        st.caption(f"Primary concern: **{goal['primary']}** — this leads the formula.")
+
+        if len(sel) > 3:
+            st.warning(
+                f"{len(sel)} goals selected. A TCM formula works by addressing a "
+                "pattern, not a list — spreading it across many directions "
+                "usually weakens all of them. Three or fewer keeps it focused, "
+                "but it is your call."
+            )
+
+        c1, c2 = st.columns([3, 1])
+        if c1.button("Continue to scan →", type="primary", use_container_width=True):
+            st.session_state.cs_goal = goal
+            st.session_state.cs_step = 2
+            st.rerun()
+        if c2.button("Clear", use_container_width=True):
+            st.session_state.cs_selected = []
+            st.rerun()
+
 
 def _goal_banner():
     g = st.session_state.get("cs_goal")
     if not g:
         return
+    titles = g.get("titles") or [g.get("title", "")]
     c1, c2 = st.columns([5, 1])
-    c1.success(f"🎯 Goal: **{g['title']}**")
+    if len(titles) > 1:
+        c1.success(f"🎯 Goals: **{titles[0]}** (primary) + {', '.join(titles[1:])}")
+    else:
+        c1.success(f"🎯 Goal: **{titles[0]}**")
     if c2.button("Change", use_container_width=True):
         for k in ("cs_goal", "cs_scan", "cs_result"):
             st.session_state.pop(k, None)

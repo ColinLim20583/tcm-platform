@@ -830,8 +830,20 @@ with tab_chemsync:
             st.error("An API key is required in the sidebar to generate a blend.")
             return None
         try:
+            titles = goal.get("titles") or [goal.get("title", "")]
+            if len(titles) > 1:
+                condition = (
+                    f"Primary concern: {titles[0]}. "
+                    f"Secondary concerns: {', '.join(titles[1:])}. "
+                    "Weight the formula toward the primary concern — the Jun herb "
+                    "must address it — and support the secondary concerns only "
+                    "where a herb can serve both without diluting the pattern."
+                )
+            else:
+                condition = titles[0]
+
             return generate_formulation({
-                "condition": goal.get("title", ""),
+                "condition": condition,
                 "tcm_pattern": diag.get("primary_pattern", "") or diag.get("tcm_pattern", ""),
                 "demographic": "",
                 "preferences": "; ".join(goal.get("indications", [])),
