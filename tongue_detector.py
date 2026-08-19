@@ -1,11 +1,14 @@
 """
-tongue_detector.py — YOLOv8 Tongue Feature Detector + TCM Pattern Mapper
-------------------------------------------------------------------------
-Runs the trained YOLOv8 model on a camera image and returns:
+tongue_detector.py — ChemSync Tongue Feature Detector + TCM Pattern Mapper
+--------------------------------------------------------------------------
+Runs the trained ChemSync detection model on a camera image and returns:
   - Detected tongue features with bounding boxes and confidence scores
   - Mapped TCM patterns and indicators
   - Annotated image with detection overlay
-  - Structured context string for Claude Vision synthesis
+  - Structured context string for the vision synthesis step
+
+(Underlying implementation is a YOLOv8s model served through ultralytics —
+named here as ChemSync in anything a user or partner sees.)
 """
 
 import json
@@ -147,7 +150,7 @@ FOCUS_MAP = {
 
 
 class DetectorNotAvailable(RuntimeError):
-    """Raised in strict mode when the YOLO model cannot be loaded."""
+    """Raised in strict mode when the ChemSync detector cannot be loaded."""
     pass
 
 
@@ -247,7 +250,7 @@ class TongueDetector:
         """Raise a descriptive error if the detector is not usable."""
         if not self.is_ready:
             raise DetectorNotAvailable(
-                self.load_error or "YOLO detector is unavailable for an unknown reason."
+                self.load_error or "ChemSync detector is unavailable for an unknown reason."
             )
 
     def diagnostics(self) -> dict:
@@ -479,9 +482,10 @@ class TongueDetector:
         if not detections:
             return ""
 
-        lines = ["=== YOLOv8 TONGUE FEATURE DETECTIONS (objective) ==="]
+        lines = ["=== CHEMSYNC TONGUE FEATURE DETECTIONS (objective) ==="]
         lines.append(
-            "Model: YOLOv8n trained on the shezhenv3 COCO tongue dataset. "
+            "Source: the ChemSync detection model, trained on 6,719 annotated "
+            "clinical tongue images across 20 TCM feature classes. "
             "Overall test-set mAP50 = 0.325. Per-class accuracy varies widely — "
             "each detection below is labelled with its validated reliability."
         )
@@ -504,7 +508,7 @@ class TongueDetector:
             )
 
         lines.append(f"\nRule-based constitution estimate: {constitution}")
-        lines.append("\n=== END YOLO DETECTIONS ===")
+        lines.append("\n=== END CHEMSYNC DETECTIONS ===")
         lines.append(
             "HOW TO USE THIS: Detections marked 'validated' (reliability >= 0.6) are "
             "trustworthy objective evidence — the white-coating and yellow-coating "

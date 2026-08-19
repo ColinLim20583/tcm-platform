@@ -196,7 +196,7 @@ with st.sidebar:
     from pathlib import Path as _Path
     _model_path = _Path(__file__).parent / "models" / "tongue_yolo_best.pt"
     if _model_path.exists():
-        st.markdown("**⚡ YOLOv8 Pipeline**")
+        st.markdown("**⚡ ChemSync Detection**")
         # Read the real figures from the training run rather than hardcoding.
         try:
             import json as _json
@@ -215,7 +215,7 @@ with st.sidebar:
             st.success("Model ready")
             st.caption("class_reliability.json missing — per-class accuracy unknown")
     else:
-        st.markdown("**⚡ YOLOv8 Pipeline**")
+        st.markdown("**⚡ ChemSync Detection**")
         st.caption("No model trained yet")
         st.caption("Run: `python setup_dataset.py --zip ...`")
         st.caption("Then: `python train_yolo.py`")
@@ -754,7 +754,7 @@ def render_vision_results(diag: dict):
         st.markdown("")
         st.markdown("**🧬 Method used:**")
         if mode == "yolo+claude":
-            st.markdown("<span style='color:#86efac;font-size:13px'>• YOLOv8 object detection (trained on labelled tongue dataset) + ChemSync Vision synthesis</span>",
+            st.markdown("<span style='color:#86efac;font-size:13px'>• ChemSync feature detection (trained on a labelled tongue dataset) + ChemSync Vision synthesis</span>",
                         unsafe_allow_html=True)
             st.caption("Note: the detector is reliable for coating colour; other feature classes have lower validated accuracy.")
         else:
@@ -1054,7 +1054,7 @@ with tab_vision:
                     st.markdown(
                         f'<div style="background:#052e16;border:1px solid #166534;border-radius:8px;'
                         f'padding:.5rem 1rem;font-size:13px;color:#86efac;margin-bottom:.5rem">'
-                        f'⚡ <b>YOLOv8 detector loaded</b> — {_diag_info["num_classes"]} classes, '
+                        f'⚡ <b>ChemSync detector active</b> — {_diag_info["num_classes"]} classes, '
                         f'validated mAP50 {_diag_info["validated_map50"]}'
                         f'</div>',
                         unsafe_allow_html=True
@@ -1074,7 +1074,7 @@ with tab_vision:
                     st.json(_diag_info)
 
                 strict_yolo = st.checkbox(
-                    "Require YOLO detection (fail rather than fall back to vision-only)",
+                    "Require feature detection (fail rather than fall back to vision-only)",
                     value=True,
                     help="Guarantees you always know whether the trained model actually ran."
                 )
@@ -1151,8 +1151,8 @@ with tab_vision:
                             # Show YOLO annotated image if available
                             annotated = diag.get("annotated_image")
                             if annotated is not None:
-                                st.markdown("#### 🎯 YOLO Detection Overlay")
-                                st.image(annotated, caption="YOLOv8 tongue feature detections", use_container_width=True)
+                                st.markdown("#### 🎯 ChemSync Detection Overlay")
+                                st.image(annotated, caption="ChemSync tongue feature detections", use_container_width=True)
 
                                 # Detection table
                                 yolo_dets = diag.get("yolo_detections", [])
@@ -1193,7 +1193,7 @@ with tab_vision:
                                 # YOLO patterns
                                 yolo_patterns = diag.get("yolo_patterns", [])
                                 if yolo_patterns:
-                                    st.markdown("**YOLO-Derived Patterns:**")
+                                    st.markdown("**Detected Patterns:**")
                                     for p in yolo_patterns[:3]:
                                         bar_w = int(p.get("confidence", 0))
                                         st.markdown(

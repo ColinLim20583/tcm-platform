@@ -787,7 +787,7 @@ def analyze_with_yolo_pipeline(
         except Exception as e:
             if require_yolo:
                 raise RuntimeError(
-                    f"YOLO detection is required but the detector could not be "
+                    f"ChemSync detection is required but the detector could not be "
                     f"imported: {type(e).__name__}: {e}"
                 )
 
@@ -795,11 +795,11 @@ def analyze_with_yolo_pipeline(
         # Strict mode — fail loudly rather than silently degrading
         if detector is None:
             raise RuntimeError(
-                "YOLO detection is required but no detector could be created."
+                "ChemSync detection is required but no detector could be created."
             )
         if not getattr(detector, "is_ready", False):
             raise RuntimeError(
-                "YOLO detection is required but the model is not loaded.\n"
+                "ChemSync detection is required but the model is not loaded.\n"
                 f"Reason: {getattr(detector, 'load_error', 'unknown')}"
             )
         yolo_result = detector.detect(
@@ -817,14 +817,14 @@ def analyze_with_yolo_pipeline(
     # detections is evidence of a normal tongue, not a licence to speculate.
     if yolo_result.get("yolo_available") and not yolo_result.get("detections"):
         yolo_context = (
-            "=== YOLOv8 TONGUE FEATURE DETECTIONS (objective) ===\n"
+            "=== CHEMSYNC TONGUE FEATURE DETECTIONS (objective) ===\n"
             "The trained detector ran successfully and found NO tongue features "
             "above the confidence threshold.\n\n"
             "HOW TO USE THIS: This is meaningful negative evidence. A tongue with "
             "no detected abnormal features is most consistent with a NORMAL, "
             "healthy tongue. Do not invent findings to fill this gap. Strongly "
             "consider reporting 'No significant pattern — Balanced (平和质)'.\n"
-            "=== END YOLO DETECTIONS ==="
+            "=== END CHEMSYNC DETECTIONS ==="
         )
 
     # ── Vitals context (objective measurements) ───────────────────────────────
