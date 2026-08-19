@@ -41,6 +41,7 @@ def _load() -> list:
                 "raw_per_g": float(row["raw_per_g"]),
                 "raw_per_bag": float(row["raw_per_bag"]),
                 "categories": [c for c in row["categories"].split("|") if c],
+                "indications": row.get("indications", ""),
                 "tcm_functions": row["tcm_functions"],
                 "contraindications": row["contraindications"],
                 "data_source": row["data_source"],
@@ -118,13 +119,41 @@ def filter_herbs_by_condition(condition_text: str, max_herbs: int = 80):
     return result
 
 
+def _safety_marker(contra: str) -> str:
+    """Short prefix so high-risk herbs are visually obvious in the prompt."""
+    low = (contra or "").lower()
+    if "aristolochic" in low:
+        return "[!! ARISTOLOCHIC ACID] "
+    if "toxic" in low:
+        return "[!! TOXIC] "
+    if "restricted" in low or "hsa status" in low:
+        return "[!! REGULATED] "
+    if "hepatotox" in low:
+        return "[! HEPATOTOXIC RISK] "
+    return ""
+
+
 def format_herb_list_for_prompt(herbs: list) -> str:
-    lines = ["No. | Chinese | Pinyin | English | Extract Ratio | TCM Functions | Contraindications"]
-    lines.append("-" * 100)
+    """
+    Render the shortlist for the formulation prompt.
+
+    Safety text is NEVER truncated. An earlier version cut contraindications at
+    40 characters, which silently removed the incompatibility and toxicity
+    warnings from 328 of 551 herbs — 制川乌 lost its 十八反 pairings, 麻黄 lost
+    its cardiac and MAOI warnings. Truncating this field is a safety defect,
+    not a formatting choice.
+    """
+    lines = []
     for i, h in enumerate(herbs, 1):
-        line = (f"{i:3}. | {h['chinese']:10} | {h['pinyin']:20} | {h['english']:30} | "
-                f"{h['extract_ratio']:6} | {h['tcm_functions'][:60]:60} | {h['contraindications'][:40]}")
-        lines.append(line)
+        marker = _safety_marker(h.get("contraindications", ""))
+        lines.append(
+            f"{i}. {marker}{h['chinese']} ({h['pinyin']} / {h['english']})\n"
+            f"   Extract ratio: {h['extract_ratio']}  |  "
+            f"Raw herb per g: {h['raw_per_g']}g\n"
+            f"   Indicated for: {h.get('indications', '')}\n"
+            f"   Actions: {h['tcm_functions']}\n"
+            f"   CONTRAINDICATIONS: {h['contraindications']}"
+        )
     return "\n".join(lines)
 
 

@@ -109,7 +109,9 @@ Respond ONLY with a single valid JSON object matching this exact schema:
       "role_name": "Chief",
       "percentage": 25,
       "tcm_function": "Primary TCM function in this formula",
-      "evidence": "Brief evidence note or clinical reference"
+      "inventory_basis": "VERBATIM phrase copied from this herb's 'Actions:' line in the inventory above. This is what justifies its inclusion. Do not paraphrase and do not draw on knowledge outside the supplied inventory entry.",
+      "addresses": "The specific diagnostic finding this herb targets — name the pattern, tongue sign or vital sign it responds to",
+      "evidence": "Brief note. If you do not have a specific verifiable source, write 'Traditional use — no specific trial cited'."
     }}
   ],
   "formula_rationale": "Comprehensive explanation of the formula logic",
@@ -129,7 +131,7 @@ Respond ONLY with a single valid JSON object matching this exact schema:
     "notes": "other safety notes"
   }},
   "evidence_summary": "2-3 paragraph summary of clinical evidence",
-  "clinical_references": ["Author et al. (Year). Title. Journal. PMID."],
+  "clinical_references": ["Only list a study if you are certain it exists and the PMID is correct. An invented citation is far worse than none. If unsure, return an empty list."],
   "commercial": {{
     "target_market": "target customer description",
     "usp": "Unique selling proposition",
@@ -145,7 +147,35 @@ Respond ONLY with a single valid JSON object matching this exact schema:
   "tags": ["Sleep", "Stress"]
 }}
 
-CRITICAL: All formula percentages must sum to exactly 100. Use only herbs from the inventory."""
+=== NON-NEGOTIABLE RULES ===
+
+1. HERBS. Use ONLY herbs listed in the inventory above, copied with their exact
+   Chinese name including any bracketed botanical source. A herb not on that
+   list cannot be manufactured, so proposing one produces an unfillable formula.
+
+2. JUSTIFICATION. Every herb needs an "inventory_basis" quoting its 'Actions:'
+   line verbatim. If the supplied entry does not support including the herb,
+   do not include it. Do not select on knowledge of the herb that is absent
+   from the inventory entry in front of you.
+
+3. DIAGNOSIS LINK. Every herb needs an "addresses" field naming the specific
+   finding it treats. A herb that addresses nothing in the diagnosis does not
+   belong in the formula.
+
+4. CONTRAINDICATIONS. The CONTRAINDICATIONS line for each herb is complete, not
+   abbreviated. Herbs marked [!! TOXIC], [!! REGULATED] or [!! ARISTOLOCHIC ACID]
+   must not be used unless the condition specifically warrants it, and if used,
+   say so explicitly in the safety block.
+
+5. CLASSICAL INCOMPATIBILITIES. Never combine aconite-type herbs (附片, 制川乌)
+   with 半夏, 瓜蒌, 贝母, 白蔹 or 白及. Never combine 丁香 with 郁金, or 人参
+   with 五灵脂. These are checked in code after you respond; a violation voids
+   the formula.
+
+6. CITATIONS. Do not invent references, PMIDs, trials or authors. "Traditional
+   use — no specific trial cited" is an acceptable and preferred answer.
+
+7. Percentages must sum to exactly 100."""
 
     response = client.messages.create(
         model="claude-sonnet-4-5",
@@ -160,6 +190,59 @@ CRITICAL: All formula percentages must sum to exactly 100. Use only herbs from t
     total_pct = sum(h.get("percentage", 0) for h in result.get("formula", []))
     if abs(total_pct - 100) > 2:
         result["_warning"] = f"Percentages sum to {total_pct}% — may need adjustment"
+
+    # ── Deterministic checks ──────────────────────────────────────────────────
+    # Run AFTER generation and independently of the model. Asking the model that
+    # just wrote the formula whether the formula is safe is not a check.
+    from safety_rules import summarise_formula_safety
+    from inventory_data import get_herb_by_chinese
+
+    formula = result.get("formula", [])
+    herb_names = [h.get("chinese", "") for h in formula]
+    result["safety_check"] = summarise_formula_safety(herb_names)
+
+    # Grounding: every herb must exist, and its stated basis must actually
+    # appear in the inventory text rather than being recalled or invented.
+    grounding = {"unknown_herbs": [], "ungrounded": [], "missing_link": []}
+
+    for h in formula:
+        name = h.get("chinese", "")
+        rec = get_herb_by_chinese(name)
+
+        if not rec:
+            grounding["unknown_herbs"].append(name)
+            continue
+
+        h["_resolved_to"] = rec["chinese"]
+        h["_data_source"] = rec.get("data_source", "")
+        h["_contraindications"] = rec.get("contraindications", "")
+
+        basis = (h.get("inventory_basis") or "").strip().strip('".')
+        actions = rec.get("tcm_functions", "")
+        # Token overlap rather than exact substring: the model may quote a
+        # fragment or reorder clauses, which is fine. What must not pass is a
+        # justification whose content is absent from the inventory entry.
+        stop = {"the", "and", "a", "of", "to", "in", "with", "for", "or"}
+        words = {w for w in "".join(
+            c if c.isalnum() or c.isspace() else " " for c in basis.lower()
+        ).split() if w not in stop and len(w) > 2}
+        have = actions.lower()
+        overlap = sum(1 for w in words if w in have) / len(words) if words else 0
+
+        if not basis or overlap < 0.6:
+            grounding["ungrounded"].append({
+                "herb": name,
+                "claimed": basis,
+                "inventory_says": actions,
+            })
+
+        if not (h.get("addresses") or "").strip():
+            grounding["missing_link"].append(name)
+
+    grounding["clean"] = not any(
+        grounding[k] for k in ("unknown_herbs", "ungrounded", "missing_link")
+    )
+    result["grounding_check"] = grounding
 
     return result
 

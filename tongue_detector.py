@@ -40,31 +40,52 @@ TCM_MEANING = {
 }
 
 # ── Per-class validated reliability ───────────────────────────────────────────
-# Measured mAP50 on the held-out test set. Detections from unreliable classes
-# have their confidence down-weighted so the pipeline does not present a
-# poorly-validated class with the same authority as a well-validated one.
-# Overall model mAP50 = 0.325 — only the coating classes are genuinely strong.
-CLASS_RELIABILITY = {
-    "baitaishe":    0.94,   # white coating   — mAP50 0.935  (strong)
-    "huangtaishe":  0.82,   # yellow coating  — mAP50 0.817  (strong)
-    "shoushe":      0.62,   # thin tongue     — mAP50 0.623  (moderate)
-    "jiankangshe":  0.50,
-    "botaishe":     0.45,
-    "hongshe":      0.40,
-    "pangdashe":    0.35,
-    "chihenshe":    0.35,
-    "liewenshe":    0.35,
-    "hongdianshe":  0.30,
-    "zishe":        0.30,
-    "heitaishe":    0.25,
-    "huataishe":    0.25,
-    # Zone classes were the weakest in training — treat as indicative only
-    "shenquao":     0.20, "shenqutu":  0.20,
-    "gandanao":     0.20, "gandantu":  0.20,
-    "piweiao":      0.20, "piweitu":   0.20,
-    "xinfeiao":     0.20, "xinfeitu":  0.20,
-}
-DEFAULT_RELIABILITY = 0.25
+# Loaded from models/class_reliability.json, produced by the training run. These
+# are MEASURED mAP50 values on the held-out test set — not estimates, and not
+# inferred from how much training data a class had.
+#
+# That distinction matters: hongdianshe (red dots) has 2,578 training instances
+# and a measured mAP50 of 0.025. Abundant data did not make the feature
+# detectable — red dots are small and low-contrast. Weighting by training count
+# would have presented it as reliable.
+#
+# Classes below MAP50_THRESHOLD are suppressed entirely: they are not returned
+# as detections, do not contribute to pattern synthesis, and are not shown to
+# Claude. A detection the model gets right a fortieth of the time is not weak
+# evidence, it is noise, and noise fed into a formulation prompt produces a
+# confidently wrong prescription.
+import json as _json
+from pathlib import Path as _Path
+
+MAP50_THRESHOLD = 0.30
+
+_rel_path = _Path(__file__).parent / "models" / "class_reliability.json"
+CLASS_RELIABILITY = {}
+SUPPRESSED_CLASSES = set()
+MODEL_MAP50 = None
+
+try:
+    _rel = _json.loads(_rel_path.read_text(encoding="utf-8"))
+    CLASS_RELIABILITY = dict(_rel.get("test_map50_per_class", {}))
+    MODEL_MAP50 = _rel.get("test_map50")
+    SUPPRESSED_CLASSES = {
+        c for c in _rel.get("names", [])
+        if CLASS_RELIABILITY.get(c, 0.0) < MAP50_THRESHOLD
+    }
+    print(f"✓ class reliability loaded: {len(CLASS_RELIABILITY)} classes, "
+          f"{len(SUPPRESSED_CLASSES)} suppressed below mAP50 {MAP50_THRESHOLD}")
+except Exception as _e:
+    # No reliability file — fail closed rather than trusting every class.
+    print(f"⚠ class_reliability.json unreadable ({_e}); all classes treated as "
+          f"unvalidated and suppressed")
+    SUPPRESSED_CLASSES = set()
+
+DEFAULT_RELIABILITY = 0.0   # unknown class == unvalidated == not trusted
+
+
+def is_reliable(class_name: str) -> bool:
+    """True only if the class was measured at or above the threshold."""
+    return CLASS_RELIABILITY.get(class_name, 0.0) >= MAP50_THRESHOLD
 
 # ── Pattern synthesis rules ───────────────────────────────────────────────────
 # Each rule is (required_features, pattern, confidence_bonus, mode)
@@ -288,15 +309,26 @@ class TongueDetector:
                 seen[d["class_name"]] = d
         detections = list(seen.values())
 
-        # Drop detections below the minimum usable confidence, and annotate
-        # each surviving detection with its validated class reliability
+        # Drop detections below the minimum usable confidence
         detections = [d for d in detections if d["confidence"] >= MIN_DETECTION_CONF]
+
+        # Suppress classes the model cannot actually detect. Recorded rather
+        # than discarded silently, so the UI can say what was withheld and why.
+        suppressed = [d for d in detections if not is_reliable(d["class_name"])]
+        detections = [d for d in detections if is_reliable(d["class_name"])]
+
+        for d in suppressed:
+            d["suppressed_reason"] = (
+                f"class mAP50 {CLASS_RELIABILITY.get(d['class_name'], 0.0):.3f} "
+                f"is below the {MAP50_THRESHOLD} reliability threshold"
+            )
+
         for d in detections:
             rel = CLASS_RELIABILITY.get(d["class_name"], DEFAULT_RELIABILITY)
             d["reliability"] = round(rel, 2)
             d["reliability_label"] = (
                 "validated" if rel >= 0.6 else
-                "moderate" if rel >= 0.35 else "low confidence class"
+                "moderate" if rel >= 0.45 else "usable"
             )
         detections.sort(key=lambda x: -x["confidence"])
         seen = {d["class_name"]: d for d in detections}
@@ -318,6 +350,17 @@ class TongueDetector:
             "focus_areas": focus_areas,
             "annotated_image": annotated,  # PIL Image with boxes drawn
             "claude_context": self._build_claude_context(detections, patterns, constitution),
+            "suppressed_detections": [
+                {
+                    "class_name": d["class_name"],
+                    "chinese": d.get("chinese", ""),
+                    "confidence": d["confidence"],
+                    "reason": d["suppressed_reason"],
+                }
+                for d in suppressed
+            ],
+            "reliability_threshold": MAP50_THRESHOLD,
+            "model_map50": MODEL_MAP50,
         }
 
     def _synthesise_patterns(self, detections: list) -> list:

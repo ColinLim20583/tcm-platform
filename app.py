@@ -166,7 +166,23 @@ with st.sidebar:
     _model_path = _Path(__file__).parent / "models" / "tongue_yolo_best.pt"
     if _model_path.exists():
         st.markdown("**⚡ YOLOv8 Pipeline**")
-        st.success("Model ready — 19,585 tongue images")
+        # Read the real figures from the training run rather than hardcoding.
+        try:
+            import json as _json
+            _rel = _json.loads(
+                (_model_path.parent / "class_reliability.json").read_text(encoding="utf-8")
+            )
+            _n = _rel["train_images"] + _rel["val_images"] + _rel["test_images"]
+            _reliable = len(_rel.get("reliable_classes", []))
+            st.success(f"Model ready — trained on {_n:,} images")
+            st.caption(
+                f"mAP50 {_rel['test_map50']:.3f} on {_rel['test_images']} held-out "
+                f"test images · {_reliable} of {_rel['nc']} classes meet the "
+                f"reliability threshold"
+            )
+        except Exception:
+            st.success("Model ready")
+            st.caption("class_reliability.json missing — per-class accuracy unknown")
     else:
         st.markdown("**⚡ YOLOv8 Pipeline**")
         st.caption("No model trained yet")
@@ -202,7 +218,74 @@ def render_field(container, label: str, value):
     )
 
 
+def render_formula_checks(result: dict) -> bool:
+    """
+    Show the deterministic checks that ran after generation.
+
+    Returns False if the formula must not be displayed at all. A classical
+    incompatibility is not a caveat to print underneath a nice-looking product
+    card — it means the formula is wrong and showing it invites someone to make it.
+    """
+    safety = result.get("safety_check") or {}
+    grounding = result.get("grounding_check") or {}
+
+    blocking = safety.get("blocking") or []
+    if blocking:
+        st.error("⛔ Formula blocked — classical incompatibility detected")
+        for v in blocking:
+            st.markdown(
+                f"**{v['rule']}**  \n"
+                f"Herbs involved: {'、'.join(v['herbs'])}  \n"
+                f"{v['note']}"
+            )
+        st.caption("Regenerate, or exclude one side of the pair using 'Herbs to avoid'.")
+        return False
+
+    for v in safety.get("violations", []):
+        st.warning(f"⚠ {v['rule']} — {'、'.join(v['herbs'])}. {v['note']}")
+
+    unknown = grounding.get("unknown_herbs") or []
+    if unknown:
+        st.error(
+            "⛔ Formula contains herbs that are not in the Chemigran inventory and "
+            f"cannot be manufactured: {'、'.join(unknown)}"
+        )
+        return False
+
+    ungrounded = grounding.get("ungrounded") or []
+    if ungrounded:
+        with st.expander(f"⚠ {len(ungrounded)} herb(s) justified by text not in the inventory", expanded=True):
+            st.caption(
+                "The stated reason for including these herbs does not match their "
+                "recorded actions. Treat the justification as unverified."
+            )
+            for u in ungrounded:
+                st.markdown(
+                    f"**{u['herb']}**  \n"
+                    f"Claimed: *{u['claimed']}*  \n"
+                    f"Inventory records: {u['inventory_says']}"
+                )
+
+    flagged = safety.get("flagged_herbs") or {}
+    if flagged:
+        with st.expander(f"🔍 Safety flags on {len(flagged)} herb(s)"):
+            for herb, flags in flagged.items():
+                st.markdown(f"**{herb}** — {', '.join(flags)}")
+
+    derived = safety.get("derived_knowledge_count", 0)
+    if derived:
+        st.caption(
+            f"ℹ {derived} herb(s) in this formula rely on generated reference data "
+            "that has not been practitioner-reviewed."
+        )
+
+    return True
+
+
 def render_product_card(result: dict, show_business_btn: bool = True, compact: bool = False, key_suffix: str = ""):
+    if not render_formula_checks(result):
+        return
+
     name_en = result.get("product_name_en", "Unnamed Product")
     name_zh = result.get("product_name_zh", "")
     pattern = result.get("tcm_pattern", "")
@@ -935,10 +1018,31 @@ with tab_vision:
                                     'border-radius:8px;padding:.7rem 1rem;font-size:13px;'
                                     'color:#86efac;margin:.5rem 0">'
                                     '✅ <b>Detector ran and found no abnormal tongue features</b><br>'
-                                    '<span style="font-size:12px">This is meaningful negative '
-                                    'evidence consistent with a normal, healthy tongue.</span></div>',
+                                    '<span style="font-size:12px">Note this covers only the '
+                                    'features the model detects reliably — it is not evidence '
+                                    'that the tongue is normal.</span></div>',
                                     unsafe_allow_html=True
                                 )
+
+                            # Features the detector saw but is not trusted to report
+                            supp = diag.get("suppressed_detections") or []
+                            if supp:
+                                with st.expander(
+                                    f"🔇 {len(supp)} detection(s) withheld as unreliable"
+                                ):
+                                    st.caption(
+                                        "The model flagged these, but its measured accuracy "
+                                        "on them is too low to act on. They did not influence "
+                                        "the diagnosis or the formula."
+                                    )
+                                    for s in supp:
+                                        st.markdown(
+                                            f"**{s['class_name']}** {s.get('chinese','')} "
+                                            f"— detector confidence {s['confidence']:.2f}  \n"
+                                            f"<span style='font-size:12px;color:#94a3b8'>"
+                                            f"{s['reason']}</span>",
+                                            unsafe_allow_html=True,
+                                        )
 
                             # Show YOLO annotated image if available
                             annotated = diag.get("annotated_image")
