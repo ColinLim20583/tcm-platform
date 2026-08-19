@@ -17,23 +17,90 @@ conclusion from the professional one.
 
 import streamlit as st
 
+# Each goal carries the category tags that drive herb shortlisting. Every goal
+# below was checked against herbs.csv and has at least 23 supporting products —
+# a goal the inventory cannot actually serve would produce a weak formula and
+# an empty product match.
+#
+# (key, icon, title, description, group, category_tags)
 GOALS = [
-    ("sleep",      "😴", "Sleep &amp; Rest",       "Trouble falling or staying asleep, waking unrested",
-     ["poor sleep", "insomnia", "Shen disturbance", "anxiety"]),
-    ("energy",     "⚡", "Energy &amp; Vitality",  "Persistent tiredness, low stamina, afternoon slumps",
-     ["fatigue", "Qi deficiency", "Spleen patterns"]),
-    ("digestion",  "🌿", "Digestion &amp; Gut",    "Bloating, irregularity, discomfort after eating",
-     ["poor digestion", "bloating and distension", "intestinal complaints", "Spleen patterns"]),
-    ("stress",     "🧘", "Stress &amp; Mood",      "Tension, irritability, feeling wound up",
-     ["stress", "Liver Qi constraint", "irritability", "low mood"]),
-    ("immunity",   "🛡️", "Immunity &amp; Defence", "Frequent colds, slow recovery, low resilience",
-     ["low immunity", "Qi deficiency", "Lung patterns"]),
-    ("womens",     "🌸", "Women's Health",         "Cycle regularity, menopausal changes",
-     ["menstrual disorders", "women's health", "menopausal symptoms", "Blood deficiency"]),
-    ("joints",     "🦴", "Joints &amp; Mobility",  "Stiffness, aches, reduced range of movement",
-     ["joint pain", "Wind-Damp obstruction", "pain", "bone weakness"]),
-    ("skin",       "✨", "Skin &amp; Radiance",    "Dullness, breakouts, dryness",
-     ["skin conditions", "Heat patterns", "Blood deficiency"]),
+    # ── Everyday wellbeing ────────────────────────────────────────────────────
+    ("sleep",     "😴", "Sleep &amp; Rest",        "Trouble falling or staying asleep, waking unrested",
+     "Everyday wellbeing", ["sleep", "insomnia", "shen", "anxiety"]),
+    ("energy",    "⚡", "Energy &amp; Vitality",   "Persistent tiredness, low stamina, afternoon slumps",
+     "Everyday wellbeing", ["fatigue", "qi_tonic", "spleen"]),
+    ("stress",    "🧘", "Stress &amp; Mood",       "Tension, irritability, feeling wound up",
+     "Everyday wellbeing", ["stress", "liver_qi", "irritability", "depression", "mood"]),
+    ("brain",     "🧠", "Brain &amp; Memory",      "Focus, forgetfulness, mental clarity",
+     "Everyday wellbeing", ["memory", "brain", "shen", "kidney"]),
+    ("immunity",  "🛡️", "Immunity &amp; Defence",  "Frequent colds, slow recovery, low resilience",
+     "Everyday wellbeing", ["immune", "qi_tonic", "lung", "antiviral", "infection"]),
+    ("coldflu",   "🤧", "Cold &amp; Flu Recovery", "Sore throat, chills, lingering after-effects",
+     "Everyday wellbeing", ["exterior", "wind_cold", "wind_heat", "fever", "throat"]),
+
+    # ── Digestive &amp; metabolic ────────────────────────────────────────────────
+    ("digestion", "🌿", "Digestion &amp; Gut",     "Bloating, irregularity, discomfort after eating",
+     "Digestive &amp; metabolic", ["digestion", "gut", "bloating", "appetite", "stomach"]),
+    ("weight",    "⚖️", "Weight &amp; Metabolism", "Water retention, sluggish metabolism, heaviness",
+     "Digestive &amp; metabolic", ["weight", "damp", "phlegm", "digestion"]),
+    ("bloodsugar","🩸", "Blood Sugar Balance",     "Sugar cravings, energy crashes, thirst",
+     "Digestive &amp; metabolic", ["blood_sugar", "yin_tonic", "thirst", "spleen"]),
+    ("lipids",    "💧", "Cholesterol &amp; Lipids", "Lipid management and vascular support",
+     "Digestive &amp; metabolic", ["cholesterol", "blood_move", "damp", "liver"]),
+    ("liver",     "🍃", "Liver &amp; Detox",       "Sluggishness, rich diet, alcohol, detox support",
+     "Digestive &amp; metabolic", ["liver", "jaundice", "detox", "damp_heat", "gallbladder"]),
+
+    # ── Cardiovascular &amp; circulation ─────────────────────────────────────────
+    ("heart",     "❤️", "Heart &amp; Circulation", "Palpitations, cold hands and feet, poor circulation",
+     "Cardiovascular", ["heart", "circulation", "blood_move", "blood_stasis"]),
+    ("bp",        "📈", "Blood Pressure",          "Blood pressure and Liver Yang support",
+     "Cardiovascular", ["hypertension", "blood_pressure", "liver_yang", "wind"]),
+
+    # ── Men's &amp; women's health ───────────────────────────────────────────────
+    ("mens",      "♂️", "Men's Health",            "Vitality, stamina, prostate and Kidney Yang support",
+     "Men's &amp; women's", ["men", "yang_tonic", "kidney", "essence", "jing"]),
+    ("womens",    "🌸", "Women's Health",          "Cycle regularity, period comfort, Blood nourishment",
+     "Men's &amp; women's", ["women", "menstrual", "blood_tonic", "uterus", "postpartum"]),
+    ("menopause", "🌺", "Menopause",               "Hot flushes, night sweats, mood changes",
+     "Men's &amp; women's", ["menopause", "yin_tonic", "sweating", "heat", "women"]),
+    ("fertility", "🌱", "Fertility &amp; Conception", "Preconception support for both partners",
+     "Men's &amp; women's", ["fertility", "essence", "jing", "kidney", "blood_tonic"]),
+
+    # ── Structural &amp; pain ────────────────────────────────────────────────────
+    ("joints",    "🦴", "Joints &amp; Mobility",   "Stiffness, aches, reduced range of movement",
+     "Structural &amp; pain", ["joint", "wind_damp", "arthritis", "sinew", "collateral"]),
+    ("bone",      "🦵", "Bone &amp; Back Strength", "Lower back weakness, bone density, recovery",
+     "Structural &amp; pain", ["bone", "back_pain", "kidney", "fracture"]),
+    ("pain",      "💢", "Pain Relief",             "Headaches, cramps, injury-related pain",
+     "Structural &amp; pain", ["pain", "headache", "spasm", "trauma"]),
+
+    # ── Respiratory, ENT &amp; sensory ───────────────────────────────────────────
+    ("resp",      "🫁", "Respiratory &amp; Cough", "Persistent cough, phlegm, wheeze",
+     "Respiratory &amp; sensory", ["cough", "lung", "phlegm", "asthma", "throat"]),
+    ("allergy",   "🌾", "Allergy &amp; Sinus",     "Sneezing, congestion, seasonal reactions",
+     "Respiratory &amp; sensory", ["allergy", "sinus", "nasal", "wind_heat", "wind_cold"]),
+    ("eye",       "👁️", "Eye Health",              "Screen strain, dryness, blurred vision",
+     "Respiratory &amp; sensory", ["eye", "eyes", "liver", "yin_tonic"]),
+
+    # ── Appearance &amp; longevity ───────────────────────────────────────────────
+    ("skin",      "✨", "Skin &amp; Radiance",     "Dullness, breakouts, dryness, itching",
+     "Appearance &amp; longevity", ["skin", "itch", "rash", "toxin"]),
+    ("hair",      "💇", "Hair &amp; Scalp",        "Thinning, premature greying, scalp health",
+     "Appearance &amp; longevity", ["hair", "kidney", "blood_tonic", "essence"]),
+    ("ageing",    "🕰️", "Healthy Ageing",          "Longevity, resilience, Essence preservation",
+     "Appearance &amp; longevity", ["aging", "kidney", "yin_tonic", "essence", "bone"]),
+
+    # ── Specific concerns ─────────────────────────────────────────────────────
+    ("kidney",    "💦", "Kidney &amp; Urinary",    "Frequency, urgency, fluid retention",
+     "Specific concerns", ["kidney", "urinary", "oedema", "stone", "enuresis"]),
+    ("thyroid",   "🦋", "Thyroid &amp; Nodules",   "Nodules, lumps, lymphatic congestion",
+     "Specific concerns", ["thyroid", "nodule", "phlegm", "lymph"]),
+]
+
+GROUP_ORDER = [
+    "Everyday wellbeing", "Digestive &amp; metabolic", "Cardiovascular",
+    "Men's &amp; women's", "Structural &amp; pain", "Respiratory &amp; sensory",
+    "Appearance &amp; longevity", "Specific concerns",
 ]
 
 STEPS = [
@@ -93,25 +160,76 @@ def _stepbar(current: int):
     st.markdown(html + "</div>", unsafe_allow_html=True)
 
 
+def _indications_for_tags(tags):
+    """Plain-language indications for a goal, taken from the same map the
+    inventory uses so goal wording and herb wording cannot drift apart."""
+    try:
+        from indications_map import INDICATION
+    except Exception:
+        return list(tags)
+    out, seen = [], set()
+    for t in tags:
+        text = INDICATION.get(t)
+        if text and text not in seen:
+            seen.add(text)
+            out.append(text)
+    return out or list(tags)
+
+
 def _step_goal():
     st.markdown("#### 1️⃣ What would you like to work on?")
-    st.caption("Pick the goal that matters most right now. You can change it later.")
+    st.caption(
+        f"{len(GOALS)} areas, each backed by products in the Chemigran inventory. "
+        "Pick the one that matters most right now — you can change it later."
+    )
 
-    cols = st.columns(4)
-    for i, (key, icon, title, desc, inds) in enumerate(GOALS):
-        with cols[i % 4]:
-            st.markdown(
-                f'<div class="cs-goal"><div class="g-t">{icon} {title}</div>'
-                f'<div class="g-d">{desc}</div></div>',
-                unsafe_allow_html=True,
+    query = st.text_input(
+        "Search goals", placeholder="e.g. sleep, prostate, hot flushes, cholesterol",
+        label_visibility="collapsed",
+    ).strip().lower()
+
+    shown = 0
+    for group in GROUP_ORDER:
+        items = [
+            g for g in GOALS
+            if g[4] == group and (
+                not query
+                or query in g[2].lower().replace("&amp;", "&")
+                or query in g[3].lower()
+                or any(query in t for t in g[5])
             )
-            if st.button("Choose", key=f"goal_{key}", use_container_width=True):
-                st.session_state.cs_goal = {
-                    "key": key, "title": title.replace("&amp;", "&"),
-                    "indications": inds,
-                }
-                st.session_state.cs_step = 2
-                st.rerun()
+        ]
+        if not items:
+            continue
+        shown += len(items)
+        st.markdown(
+            f"<div style='font-size:11px;letter-spacing:.12em;color:#64748b;"
+            f"text-transform:uppercase;margin:1rem 0 .4rem'>{group}</div>",
+            unsafe_allow_html=True,
+        )
+        cols = st.columns(3)
+        for i, (key, icon, title, desc, _grp, tags) in enumerate(items):
+            with cols[i % 3]:
+                st.markdown(
+                    f'<div class="cs-goal"><div class="g-t">{icon} {title}</div>'
+                    f'<div class="g-d">{desc}</div></div>',
+                    unsafe_allow_html=True,
+                )
+                if st.button("Choose", key=f"goal_{key}", use_container_width=True):
+                    st.session_state.cs_goal = {
+                        "key": key,
+                        "title": title.replace("&amp;", "&"),
+                        "tags": tags,
+                        "indications": _indications_for_tags(tags),
+                    }
+                    st.session_state.cs_step = 2
+                    st.rerun()
+
+    if query and not shown:
+        st.info(
+            f"Nothing matches '{query}'. Try a broader term, or choose the closest "
+            "area — the scan refines the recommendation from there."
+        )
 
 
 def _goal_banner():

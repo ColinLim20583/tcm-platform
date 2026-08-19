@@ -1426,11 +1426,30 @@ with tab_inventory:
     all_herbs = get_all_herbs()
     all_categories = sorted(set(c for h in all_herbs for c in h.get("categories", [])))
 
-    col1, col2 = st.columns([2, 1])
+    col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
-        inv_search = st.text_input("🔍 Search herbs", placeholder="Chinese name, pinyin, English, TCM function...")
+        inv_search = st.text_input(
+            "🔍 Search herbs",
+            placeholder="Chinese name, pinyin, English, indication, TCM function...",
+        )
     with col2:
-        selected_cat = st.selectbox("Filter by Category", ["All"] + all_categories)
+        selected_cat = st.selectbox("Category", ["All"] + all_categories)
+    with col3:
+        proc_opts = sorted({h.get("processing", "") for h in all_herbs if h.get("processing")})
+        selected_proc = st.selectbox("炮制 Processing", ["All", "Unprocessed"] + proc_opts)
+
+    col4, col5 = st.columns([1, 1])
+    with col4:
+        src_filter = st.selectbox(
+            "Data source", ["All", "curated only", "derived only"],
+            help="Derived entries were generated from standard references and "
+                 "have not been practitioner-reviewed.",
+        )
+    with col5:
+        safety_filter = st.selectbox(
+            "Safety flag", ["All", "Flagged only", "Unflagged only"],
+            help="Flagged = toxic, regulated, hepatotoxic or aristolochic-acid warnings.",
+        )
 
     filtered = all_herbs
     if inv_search:
@@ -1439,23 +1458,102 @@ with tab_inventory:
                     q in h.get("chinese","").lower() or
                     q in h.get("pinyin","").lower() or
                     q in h.get("english","").lower() or
+                    q in h.get("indications","").lower() or
                     q in h.get("tcm_functions","").lower()]
     if selected_cat != "All":
         filtered = [h for h in filtered if selected_cat in h.get("categories", [])]
+    if selected_proc == "Unprocessed":
+        filtered = [h for h in filtered if not h.get("processing")]
+    elif selected_proc != "All":
+        filtered = [h for h in filtered if h.get("processing") == selected_proc]
+    if src_filter == "curated only":
+        filtered = [h for h in filtered if h.get("data_source", "").startswith("curated")]
+    elif src_filter == "derived only":
+        filtered = [h for h in filtered if h.get("data_source", "") == "derived"]
 
-    st.caption(f"Showing {len(filtered)} of {len(all_herbs)} herbs")
+    def _flagged(h):
+        low = (h.get("contraindications") or "").lower()
+        return any(k in low for k in ("toxic", "restricted", "hsa status",
+                                      "aristolochic", "hepatotox"))
+    if safety_filter == "Flagged only":
+        filtered = [h for h in filtered if _flagged(h)]
+    elif safety_filter == "Unflagged only":
+        filtered = [h for h in filtered if not _flagged(h)]
 
-    for herb in filtered[:50]:
+    st.caption(f"Showing **{len(filtered)}** of {len(all_herbs)} products")
+
+    # Full table first — every matching row, nothing truncated. Expanders are
+    # paginated below because rendering 551 of them at once is unusable.
+    st.dataframe(
+        [
+            {
+                "#": h["id"],
+                "Product": h["chinese"],
+                "Pinyin": h["pinyin"],
+                "English": h["english"],
+                "炮制": h.get("processing", "") or "—",
+                "Source species": h.get("botanical_source", "") or "—",
+                "Ratio": h["extract_ratio"],
+                "Raw/bag (g)": h["raw_per_bag"],
+                "Indicated for": h.get("indications", ""),
+                "Actions": h["tcm_functions"],
+                "Contraindications": h["contraindications"],
+                "Data": h.get("data_source", ""),
+            }
+            for h in filtered
+        ],
+        use_container_width=True,
+        height=430,
+        hide_index=True,
+    )
+
+    PER_PAGE = 25
+    total_pages = max(1, (len(filtered) + PER_PAGE - 1) // PER_PAGE)
+    page = 1
+    if total_pages > 1:
+        page = st.number_input(
+            f"Detail view — page (1–{total_pages}, {PER_PAGE} per page)",
+            min_value=1, max_value=total_pages, value=1, step=1,
+        )
+    start = (page - 1) * PER_PAGE
+    page_items = filtered[start:start + PER_PAGE]
+    if page_items:
+        st.caption(f"Detail for products {start + 1}–{start + len(page_items)}")
+
+    for herb in page_items:
         with st.expander(f"{herb['chinese']} — {herb['pinyin']} — {herb['english']}"):
             c1, c2, c3 = st.columns(3)
             c1.metric("Extract Ratio", herb["extract_ratio"])
             c2.metric("Raw per 1g granule", f"{herb['raw_per_g']}g")
             c3.metric("Raw per bag", f"{herb['raw_per_bag']}g")
+            if herb.get("processing") or herb.get("botanical_source"):
+                bits = []
+                if herb.get("processing"):
+                    bits.append(f"炮制 processing: **{herb['processing']}**")
+                if herb.get("botanical_source"):
+                    bits.append(f"botanical source: **{herb['botanical_source']}**")
+                st.caption(" · ".join(bits))
+
+            st.markdown(f"**Indicated for:** {herb.get('indications', '—')}")
             st.markdown(f"**TCM Functions:** {herb['tcm_functions']}")
-            st.markdown(f"**Contraindications:** {herb['contraindications']}")
+
+            contra = herb.get("contraindications", "")
+            if _flagged(herb):
+                st.error(f"**Contraindications:** {contra}")
+            else:
+                st.markdown(f"**Contraindications:** {contra}")
+
             cats = herb.get("categories", [])
             st.markdown("**Categories:** " + " ".join(f'<span class="meta-pill">{c}</span>' for c in cats),
                         unsafe_allow_html=True)
+
+            src = herb.get("data_source", "")
+            if src == "derived":
+                st.caption(
+                    "ℹ Reference data generated from standard sources — not "
+                    "practitioner-reviewed. Manufacturing figures are from the "
+                    "Chemigran product list and are authoritative."
+                )
 
             if api_key:
                 condition_for_evidence = st.text_input("Enrich evidence for condition:", key=f"ev_cond_{herb['id']}",

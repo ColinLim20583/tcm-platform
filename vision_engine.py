@@ -590,7 +590,7 @@ def analyze_tcm_visual(image_bytes: bytes, scan_focus: str, api_key: str) -> dic
 
     response = client.messages.create(
         model="claude-sonnet-4-5",
-        max_tokens=4000,
+        max_tokens=8000,
         system=VISION_SYSTEM_PROMPT,
         messages=[{
             "role": "user",
@@ -849,7 +849,7 @@ def analyze_with_yolo_pipeline(
 
     response = client.messages.create(
         model="claude-sonnet-4-5",
-        max_tokens=4000,
+        max_tokens=8000,
         system=VISION_SYSTEM_PROMPT,
         messages=[{
             "role": "user",
