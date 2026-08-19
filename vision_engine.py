@@ -1,5 +1,5 @@
 """
-vision_engine.py — Chemigran TCM Visual Diagnosis Engine
+vision_engine.py — ChemSync Visual Diagnosis Engine
 --------------------------------------------------------
 Uses Claude Vision (claude-sonnet-4-5) to analyse live camera images
 (tongue + face) and return structured TCM pattern diagnosis.
@@ -283,7 +283,7 @@ BASE RATES — you must respect these:
   swollen pale body AND thick greasy coating AND deep teeth marks together.
 """
 
-VISION_SYSTEM_PROMPT = f"""You are ChemiGranVision — a TCM visual assessment AI integrated into Chemigran Pte Ltd's formulation platform.
+VISION_SYSTEM_PROMPT = f"""You are ChemSync Bio-Scan — a TCM visual assessment AI integrated into Chemigran Pte Ltd's formulation platform.
 
 You perform structured observation (望诊 Wàng Zhěn) on photographs. You are a
 careful, conservative observer — closer to a radiologist writing a report than

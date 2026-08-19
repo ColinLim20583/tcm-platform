@@ -19,7 +19,7 @@ ANTHROPIC_API_KEY = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
 
 DEFAULT_MODEL = "claude-sonnet-4-5"
 DB_PATH = "tcm_knowledge.db"
-APP_TITLE = "Chemigran TCM Formulation Intelligence Platform"
-APP_SUBTITLE = "AI-Powered TCM Product Development | Singapore & Southeast Asia"
+APP_TITLE = "ChemSync™"
+APP_SUBTITLE = "AI-powered product discovery that scans, analyses and guides you to the right Chemigran health product"
 VERSION = "2.0.0"
 COMPANY = "Chemigran Pte Ltd"

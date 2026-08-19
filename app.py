@@ -1,5 +1,5 @@
 """
-app.py — Chemigran TCM Formulation Intelligence Platform v2.0
+app.py — ChemSync™ v2.0
 Enhanced with Visual AI Diagnosis (camera-based TCM assessment)
 """
 
@@ -739,7 +739,8 @@ def render_vision_results(diag: dict):
 
 
 # ── TABS ─────────────────────────────────────────────────────────────────────
-tab_vision, tab_formulation, tab_knowledge, tab_inventory, tab_evidence = st.tabs([
+tab_chemsync, tab_vision, tab_formulation, tab_knowledge, tab_inventory, tab_evidence = st.tabs([
+    "✨ ChemSync",
     "🔬 Visual AI Diagnosis",
     "🧪 Formulation Generator",
     "📚 Knowledge Base",
@@ -751,6 +752,47 @@ tab_vision, tab_formulation, tab_knowledge, tab_inventory, tab_evidence = st.tab
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — VISUAL AI DIAGNOSIS
 # ══════════════════════════════════════════════════════════════════════════════
+with tab_chemsync:
+    st.markdown("## ✨ ChemSync™")
+    st.markdown(f"*{APP_SUBTITLE}*")
+
+    import chemsync_ui
+
+    def _cs_run_scan():
+        """
+        Step 2 placeholder: routes the member to the existing scan.
+
+        The Bio-Scan is deliberately NOT reimplemented here. Duplicating it would
+        risk the consumer flow and the professional flow reaching different
+        clinical conclusions from the same photo.
+        """
+        st.info(
+            "Complete your scan in the **🔬 Visual AI Diagnosis** tab — enter "
+            "vitals, capture the image and run the analysis. Come back here and "
+            "your result will be picked up automatically."
+        )
+        return st.session_state.get("last_vision_result")
+
+    def _cs_generate(goal, diag):
+        if not api_key:
+            st.error("An API key is required in the sidebar to generate a blend.")
+            return None
+        try:
+            return generate_formulation({
+                "condition": goal.get("title", ""),
+                "tcm_pattern": diag.get("primary_pattern", "") or diag.get("tcm_pattern", ""),
+                "demographic": "",
+                "preferences": "; ".join(goal.get("indications", [])),
+                "format": "granule blend",
+                "vision_context": diag.get("claude_context", ""),
+            }, api_key)
+        except Exception as e:
+            st.error(f"Could not generate a blend: {e}")
+            return None
+
+    chemsync_ui.render(_cs_run_scan, _cs_generate)
+
+
 with tab_vision:
     st.markdown("## 🔬 Visual AI Diagnosis")
     st.markdown("*Use your computer or phone camera to scan tongue & face. AI analyses TCM patterns and pre-fills the formulation generator.*")
@@ -1111,7 +1153,7 @@ with tab_vision:
             st.info("📷 Capture or upload an image to begin analysis")
             st.markdown("""
             <div class="scan-guide">
-              <h4>🌿 What ChemiGranVision Analyses</h4>
+              <h4>🌿 What ChemSync Analyses</h4>
               <ul>
                 <li><b>Tongue colour & coating</b> — Blood/Qi status, Heat/Cold, Damp patterns</li>
                 <li><b>Tongue shape & moisture</b> — Spleen Qi, Yin deficiency, fluid status</li>
@@ -1275,7 +1317,7 @@ with tab_formulation:
         elif not api_key:
             st.error("Please enter your Anthropic API key in the sidebar")
         else:
-            with st.spinner("🧠 ChemiGranAI generating formulation from 551-herb inventory..."):
+            with st.spinner("🧠 ChemSync generating formulation from the 551-product inventory..."):
                 try:
                     result = generate_formulation({
                         "condition": condition,

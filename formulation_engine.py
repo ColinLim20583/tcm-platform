@@ -42,7 +42,7 @@ def _safe_json_parse(raw: str) -> dict:
 
     raise ValueError(f"Could not parse JSON from LLM response ({len(raw)} chars)")
 
-SYSTEM_PROMPT = """You are ChemiGranAI — an expert TCM formulation scientist, nutraceutical product developer, and evidence-based medicine researcher embedded in Chemigran Pte Ltd's product development platform.
+SYSTEM_PROMPT = """You are ChemSync — an expert TCM formulation scientist, nutraceutical product developer, and evidence-based medicine researcher embedded in Chemigran Pte Ltd's product development platform.
 
 Your role:
 1. Generate evidence-informed TCM formulations using ONLY herbs from the provided Chemigran inventory
