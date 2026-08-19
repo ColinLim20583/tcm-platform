@@ -754,11 +754,11 @@ def render_vision_results(diag: dict):
         st.markdown("")
         st.markdown("**🧬 Method used:**")
         if mode == "yolo+claude":
-            st.markdown("<span style='color:#86efac;font-size:13px'>• YOLOv8 object detection (trained on labelled tongue dataset) + Claude Vision synthesis</span>",
+            st.markdown("<span style='color:#86efac;font-size:13px'>• YOLOv8 object detection (trained on labelled tongue dataset) + ChemSync Vision synthesis</span>",
                         unsafe_allow_html=True)
             st.caption("Note: the detector is reliable for coating colour; other feature classes have lower validated accuracy.")
         else:
-            st.markdown("<span style='color:#93c5fd;font-size:13px'>• Claude Vision only — general-purpose AI applying TCM observation criteria</span>",
+            st.markdown("<span style='color:#93c5fd;font-size:13px'>• ChemSync Vision only — general-purpose AI applying TCM observation criteria</span>",
                         unsafe_allow_html=True)
             st.caption("No specialised tongue detector is active. Findings are AI inference from the photo, not measurement against a labelled clinical dataset.")
 
@@ -1074,7 +1074,7 @@ with tab_vision:
                     st.json(_diag_info)
 
                 strict_yolo = st.checkbox(
-                    "Require YOLO detection (fail rather than fall back to Claude-only)",
+                    "Require YOLO detection (fail rather than fall back to vision-only)",
                     value=True,
                     help="Guarantees you always know whether the trained model actually ran."
                 )
@@ -1083,11 +1083,11 @@ with tab_vision:
                                         use_container_width=True, disabled=not yolo_ready and strict_yolo)
                 if not yolo_ready and strict_yolo:
                     st.caption("Analysis is blocked because the detector is unavailable. "
-                               "Untick the box above to run Claude-only analysis instead.")
+                               "Untick the box above to run vision-only analysis instead.")
 
                 if analyze_btn:
                     spinner_msg = (
-                        "⚡ YOLOv8 detecting tongue features → merging vitals → Claude synthesising..."
+                        "⚡ ChemSync detecting tongue features → merging vitals → synthesising diagnosis..."
                         if yolo_ready else
                         "🔬 Analysing image and vitals..."
                     )
