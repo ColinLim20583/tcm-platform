@@ -1,425 +1,57 @@
 """
 inventory_data.py — Chemigran 551-Herb Granule Inventory
-Key herbs embedded with full TCM properties for AI-assisted formulation.
+
+The inventory now lives in herbs.csv beside this file, one row per product, so a
+ratio can be corrected in Excel without a code change or redeploy.
+
+Manufacturing figures (net content, raw-herb equivalents, extract ratio) come
+directly from the Chemigran product list and are authoritative.
+
+Knowledge fields carry a data_source flag:
+    curated            — hand-written, reviewed
+    curated+processed  — curated base, processing modifier applied
+    derived            — generated from standard references, NOT practitioner-reviewed
+
+Contraindications on 'derived' rows in particular should be reviewed before
+being relied upon clinically.
 """
 
-HERBS = [
-    # ── SLEEP / HEART / SHEN ─────────────────────────────────────────────────
-    {"id":1,"chinese":"炒酸枣仁","pinyin":"Chǎo Suān Zǎo Rén","english":"Roasted Ziziphus Seed",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["sleep","heart","shen","stress","anxiety"],
-     "tcm_functions":"Nourish Heart Yin, calm Shen, stop sweating","contraindications":"Excess fire patterns"},
-    {"id":2,"chinese":"茯神","pinyin":"Fú Shén","english":"Poria with Hostwood",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["sleep","heart","shen","spleen","anxiety"],
-     "tcm_functions":"Calm Shen, strengthen Spleen, drain Damp","contraindications":"None significant"},
-    {"id":3,"chinese":"首乌藤","pinyin":"Shǒu Wū Téng","english":"Polygonum Multiflorum Stem",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["sleep","heart","shen","blood_tonic"],
-     "tcm_functions":"Nourish Heart Blood, calm Shen, dispel Wind-Damp","contraindications":"None significant"},
-    {"id":4,"chinese":"柏子仁","pinyin":"Bǎi Zǐ Rén","english":"Biota Seed",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["sleep","heart","shen","constipation"],
-     "tcm_functions":"Nourish Heart, calm Shen, moisten intestines","contraindications":"Loose stools, phlegm-damp"},
-    {"id":5,"chinese":"合欢皮","pinyin":"Hé Huān Pí","english":"Mimosa Bark",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["sleep","depression","stress","anxiety","liver_qi"],
-     "tcm_functions":"Calm Shen, relieve constraint, invigorate Blood","contraindications":"Pregnancy"},
-    {"id":6,"chinese":"远志","pinyin":"Yuǎn Zhì","english":"Polygala Root",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["sleep","heart","shen","memory","phlegm"],
-     "tcm_functions":"Calm Shen, resolve Phlegm, benefit Heart-Kidney communication","contraindications":"Peptic ulcer"},
-    {"id":7,"chinese":"龙骨","pinyin":"Lóng Gǔ","english":"Dragon Bone (Fossil)",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["sleep","anxiety","shen","sweating"],
-     "tcm_functions":"Anchor Yang, calm Shen, astringe","contraindications":"Damp-Heat, exterior patterns"},
-    {"id":8,"chinese":"牡蛎","pinyin":"Mǔ Lì","english":"Oyster Shell",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["sleep","anxiety","thyroid","sweating","liver"],
-     "tcm_functions":"Anchor Liver Yang, calm Shen, soften hardness","contraindications":"None significant"},
-    # ── STRESS / LIVER QI ────────────────────────────────────────────────────
-    {"id":9,"chinese":"柴胡","pinyin":"Chái Hú","english":"Bupleurum Root",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["stress","liver_qi","depression","women","menstrual"],
-     "tcm_functions":"Spread Liver Qi, clear Shao-Yang, raise Yang","contraindications":"Yin deficiency with rising Yang"},
-    {"id":10,"chinese":"白芍","pinyin":"Bái Sháo","english":"White Peony Root",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["stress","liver_qi","women","blood_tonic","menstrual","pain"],
-     "tcm_functions":"Nourish Blood, soften Liver, stop pain","contraindications":"Cold patterns with diarrhea"},
-    {"id":11,"chinese":"香附","pinyin":"Xiāng Fù","english":"Cyperus Rhizome",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["stress","liver_qi","women","menstrual","pain"],
-     "tcm_functions":"Move Liver Qi, regulate menstruation, stop pain","contraindications":"Qi or Blood deficiency without stagnation"},
-    {"id":12,"chinese":"郁金","pinyin":"Yù Jīn","english":"Turmeric Root",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["stress","liver_qi","depression","blood_stasis","gallbladder"],
-     "tcm_functions":"Move Qi and Blood, clear Heart, benefit Gallbladder","contraindications":"Pregnancy; no blood-thinners"},
-    {"id":13,"chinese":"薄荷","pinyin":"Bò Hé","english":"Peppermint",
-     "extract_ratio":"3:1","raw_per_g":3,"raw_per_bag":45,
-     "categories":["stress","liver_qi","head","throat","heat"],
-     "tcm_functions":"Spread Liver Qi, clear head and eyes, expel Wind-Heat","contraindications":"Qi or Yin deficiency, profuse sweating"},
-    {"id":14,"chinese":"玫瑰花","pinyin":"Méi Guī Huā","english":"Rose Flower",
-     "extract_ratio":"3:1","raw_per_g":3,"raw_per_bag":45,
-     "categories":["stress","liver_qi","women","menstrual","mood"],
-     "tcm_functions":"Move Liver Qi, regulate Blood, uplift mood","contraindications":"Pregnancy (large doses)"},
-    {"id":15,"chinese":"合欢花","pinyin":"Hé Huān Huā","english":"Mimosa Flower",
-     "extract_ratio":"3:1","raw_per_g":3,"raw_per_bag":45,
-     "categories":["stress","sleep","anxiety","depression","mood"],
-     "tcm_functions":"Calm Shen, soothe Liver, relieve depression","contraindications":"Pregnancy"},
-    # ── QI TONIC / SPLEEN ────────────────────────────────────────────────────
-    {"id":16,"chinese":"党参","pinyin":"Dǎng Shēn","english":"Codonopsis Root",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["qi_tonic","spleen","fatigue","gut","immune","aging"],
-     "tcm_functions":"Tonify Middle Jiao Qi, strengthen Spleen and Lung","contraindications":"Excess patterns, early-stage infection"},
-    {"id":17,"chinese":"黄芪","pinyin":"Huáng Qí","english":"Astragalus Root",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["qi_tonic","immune","fatigue","aging","sweating","spleen"],
-     "tcm_functions":"Tonify Wei Qi, strengthen Spleen, raise Yang, promote healing","contraindications":"Excess patterns, Yin deficiency heat"},
-    {"id":18,"chinese":"白术","pinyin":"Bái Zhú","english":"Atractylodes Rhizome",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["spleen","gut","qi_tonic","damp","fatigue"],
-     "tcm_functions":"Strengthen Spleen, dry Damp, stabilize the exterior","contraindications":"Yin deficiency, fluid damage"},
-    {"id":19,"chinese":"茯苓","pinyin":"Fú Líng","english":"Poria",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["spleen","gut","damp","sleep","anxiety","qi_tonic"],
-     "tcm_functions":"Strengthen Spleen, drain Damp, calm Shen","contraindications":"None significant"},
-    {"id":20,"chinese":"炙甘草","pinyin":"Zhì Gān Cǎo","english":"Honey-Fried Licorice",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["qi_tonic","spleen","harmonize","palpitation"],
-     "tcm_functions":"Tonify Spleen Qi, moisten Lung, harmonize formula, nourish Heart","contraindications":"Edema, hypertension in large doses"},
-    {"id":21,"chinese":"山药","pinyin":"Shān Yào","english":"Chinese Yam",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["spleen","lung","kidney","gut","aging","qi_tonic"],
-     "tcm_functions":"Tonify Spleen, Lung and Kidney; stabilize Jing","contraindications":"Damp-Cold, food stagnation"},
-    {"id":22,"chinese":"大枣","pinyin":"Dà Zǎo","english":"Chinese Date / Jujube",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["qi_tonic","blood_tonic","spleen","sleep","shen"],
-     "tcm_functions":"Tonify Spleen and Stomach, nourish Blood, calm Shen","contraindications":"Phlegm-Damp, food stagnation"},
-    # ── BLOOD TONIC ──────────────────────────────────────────────────────────
-    {"id":23,"chinese":"当归","pinyin":"Dāng Guī","english":"Dong Quai / Angelica Root",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["blood_tonic","women","menstrual","pain","blood_stasis"],
-     "tcm_functions":"Tonify and invigorate Blood, regulate menstruation, stop pain","contraindications":"Diarrhea, pregnancy (large doses), anticoagulants"},
-    {"id":24,"chinese":"熟地黄","pinyin":"Shú Dì Huáng","english":"Prepared Rehmannia",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["blood_tonic","kidney","yin_tonic","aging","women"],
-     "tcm_functions":"Tonify Kidney Yin and Jing, nourish Blood, fill Marrow","contraindications":"Spleen deficiency with Damp"},
-    {"id":25,"chinese":"何首乌","pinyin":"Hé Shǒu Wū","english":"Fo-Ti Root",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["blood_tonic","kidney","aging","hair","liver"],
-     "tcm_functions":"Tonify Liver and Kidney, nourish Blood, blacken hair","contraindications":"Hepatotoxicity risk — use processed form; no alcohol"},
-    {"id":26,"chinese":"龙眼肉","pinyin":"Lóng Yǎn Ròu","english":"Longan Flesh",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["blood_tonic","heart","shen","sleep","spleen"],
-     "tcm_functions":"Nourish Heart and Spleen, tonify Blood, calm Shen","contraindications":"Phlegm-Damp, damp-heat"},
-    # ── YIN TONIC / KIDNEY ───────────────────────────────────────────────────
-    {"id":27,"chinese":"山茱萸","pinyin":"Shān Zhū Yú","english":"Cornus Fruit",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["kidney","yin_tonic","aging","sweating","jing"],
-     "tcm_functions":"Tonify Liver and Kidney, astringe Jing, stop sweating","contraindications":"Damp-Heat, difficult urination"},
-    {"id":28,"chinese":"枸杞子","pinyin":"Gǒu Qǐ Zǐ","english":"Wolfberry / Goji Berry",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["kidney","liver","yin_tonic","aging","eyes","blood_tonic"],
-     "tcm_functions":"Nourish Liver and Kidney, benefit eyes, tonify Jing and Blood","contraindications":"Spleen deficiency with Damp, diarrhea"},
-    {"id":29,"chinese":"女贞子","pinyin":"Nǚ Zhēn Zǐ","english":"Ligustrum Fruit",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["kidney","liver","yin_tonic","aging","hair","eyes"],
-     "tcm_functions":"Tonify Liver and Kidney Yin, darken hair, brighten eyes","contraindications":"Spleen-Stomach deficiency-cold, diarrhea"},
-    {"id":30,"chinese":"旱莲草","pinyin":"Hàn Lián Cǎo","english":"Eclipta",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["kidney","liver","yin_tonic","hair","bleeding"],
-     "tcm_functions":"Nourish Liver and Kidney, cool Blood, stop bleeding","contraindications":"Spleen-Stomach Cold deficiency"},
-    {"id":31,"chinese":"麦冬","pinyin":"Mài Dōng","english":"Ophiopogon",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["yin_tonic","lung","heart","stomach","heat","aging"],
-     "tcm_functions":"Nourish Yin, moisten Lung, clear Heart Heat, generate fluids","contraindications":"Spleen deficiency with Cold-Damp"},
-    {"id":32,"chinese":"生地黄","pinyin":"Shēng Dì Huáng","english":"Raw Rehmannia",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["yin_tonic","heat","blood_cooling","kidney","heart"],
-     "tcm_functions":"Clear Heat, cool Blood, nourish Yin, generate fluids","contraindications":"Spleen deficiency with Damp, diarrhea"},
-    {"id":33,"chinese":"天冬","pinyin":"Tiān Dōng","english":"Asparagus Root",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["yin_tonic","lung","kidney","heat","aging"],
-     "tcm_functions":"Nourish Kidney and Lung Yin, clear Heat, moisten Dryness","contraindications":"Spleen deficiency-cold, diarrhea"},
-    {"id":34,"chinese":"玉竹","pinyin":"Yù Zhú","english":"Solomon's Seal",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["yin_tonic","stomach","lung","aging","heat"],
-     "tcm_functions":"Nourish Yin, moisten Dryness, generate fluids","contraindications":"Phlegm-Damp, Cold-Damp Spleen"},
-    # ── YANG TONIC / KIDNEY ──────────────────────────────────────────────────
-    {"id":35,"chinese":"仙灵脾","pinyin":"Xiān Líng Pí","english":"Epimedium (Horny Goat Weed)",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["yang_tonic","kidney","men","libido","aging","bone"],
-     "tcm_functions":"Tonify Kidney Yang, strengthen sinews and bones, dispel Wind-Cold-Damp","contraindications":"Yin deficiency heat, hyperactive sexual desire"},
-    {"id":36,"chinese":"菟丝子","pinyin":"Tú Sī Zǐ","english":"Cuscuta Seed",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["yang_tonic","kidney","yin_tonic","jing","fertility","eyes"],
-     "tcm_functions":"Tonify Kidney Yang and Yin, stabilize Jing, brighten eyes","contraindications":"Fire from Yin deficiency, difficult urination"},
-    {"id":37,"chinese":"巴戟天","pinyin":"Bā Jǐ Tiān","english":"Morinda Root",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["yang_tonic","kidney","men","bone","joint"],
-     "tcm_functions":"Tonify Kidney Yang, strengthen sinews and bones","contraindications":"Yin deficiency with Heat, damp-heat"},
-    {"id":38,"chinese":"补骨脂","pinyin":"Bǔ Gǔ Zhī","english":"Psoralea Fruit",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["yang_tonic","kidney","spleen","bone","men"],
-     "tcm_functions":"Tonify Kidney Yang, warm Spleen, astringe Jing","contraindications":"Yin deficiency fire, photosensitivity"},
-    {"id":39,"chinese":"肉苁蓉","pinyin":"Ròu Cōng Róng","english":"Cistanche",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["yang_tonic","kidney","jing","constipation","aging","men"],
-     "tcm_functions":"Tonify Kidney Yang and Jing, moisten intestines","contraindications":"Diarrhea, excess fire, constipation from Heat"},
-    {"id":40,"chinese":"鹿茸","pinyin":"Lù Róng","english":"Deer Antler Velvet",
-     "extract_ratio":"3:1","raw_per_g":3,"raw_per_bag":45,
-     "categories":["yang_tonic","kidney","jing","aging","bone","men","women"],
-     "tcm_functions":"Tonify Kidney Yang and Jing, strengthen Du Mai, benefit Blood","contraindications":"Yin deficiency heat, hypertension, pregnancy"},
-    # ── THYROID / NODULE ─────────────────────────────────────────────────────
-    {"id":41,"chinese":"夏枯草","pinyin":"Xià Kū Cǎo","english":"Prunella Spike",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["thyroid","nodule","liver","heat","blood_pressure"],
-     "tcm_functions":"Clear Liver Fire, dissipate nodules, brighten eyes","contraindications":"Spleen-Stomach weakness"},
-    {"id":42,"chinese":"浙贝母","pinyin":"Zhè Bèi Mǔ","english":"Zhejiang Fritillaria Bulb",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["thyroid","nodule","phlegm","cough","heat"],
-     "tcm_functions":"Clear Heat, resolve Phlegm, soften hardness, dissipate nodules","contraindications":"Cold-Damp Phlegm, Spleen deficiency"},
-    {"id":43,"chinese":"玄参","pinyin":"Xuán Shēn","english":"Scrophularia Root",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["thyroid","nodule","heat","yin_tonic","lymph"],
-     "tcm_functions":"Nourish Yin, clear Heat, soften hardness, cool Blood","contraindications":"Spleen deficiency with Damp"},
-    {"id":44,"chinese":"煅牡蛎","pinyin":"Duàn Mǔ Lì","english":"Calcined Oyster Shell",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["thyroid","nodule","anxiety","sweating","acid"],
-     "tcm_functions":"Soften hardness, dissipate nodules, astringe, anchor Yang","contraindications":"None significant"},
-    {"id":45,"chinese":"猫爪草","pinyin":"Māo Zhuǎ Cǎo","english":"Ranunculus Ternatus",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["thyroid","nodule","lymph","phlegm"],
-     "tcm_functions":"Resolve Phlegm, dissipate nodules and masses","contraindications":"None significant"},
-    # ── WOMEN'S HEALTH / MENOPAUSE ───────────────────────────────────────────
-    {"id":46,"chinese":"知母","pinyin":"Zhī Mǔ","english":"Anemarrhena Rhizome",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["women","menopause","heat","yin_tonic","kidney"],
-     "tcm_functions":"Clear Heat, nourish Yin, reduce Empty Fire","contraindications":"Spleen deficiency with diarrhea"},
-    {"id":47,"chinese":"黄柏","pinyin":"Huáng Bǎi","english":"Phellodendron Bark",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["women","menopause","heat","damp_heat","kidney"],
-     "tcm_functions":"Clear Damp-Heat, reduce Empty Fire, drain Kidney Fire","contraindications":"Spleen-Stomach Cold, pregnancy"},
-    {"id":48,"chinese":"地骨皮","pinyin":"Dì Gǔ Pí","english":"Lycium Bark (Root Bark)",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["women","menopause","heat","yin_tonic","fever"],
-     "tcm_functions":"Cool Blood, reduce Empty Heat, clear Lung Heat","contraindications":"Spleen deficiency-cold, exterior patterns"},
-    {"id":49,"chinese":"浮小麦","pinyin":"Fú Xiǎo Mài","english":"Blighted Wheat",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["women","menopause","sweating","heart","shen"],
-     "tcm_functions":"Astringe sweating, nourish Heart, calm Shen","contraindications":"None significant"},
-    {"id":50,"chinese":"仙茅","pinyin":"Xiān Máo","english":"Curculigo Rhizome",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["women","menopause","yang_tonic","kidney","cold"],
-     "tcm_functions":"Warm Kidney Yang, strengthen sinews, dispel Cold-Damp","contraindications":"Yin deficiency heat, pregnancy; toxic in large doses"},
-    {"id":51,"chinese":"川芎","pinyin":"Chuān Xiōng","english":"Ligusticum Rhizome",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["women","blood_stasis","menstrual","pain","head"],
-     "tcm_functions":"Invigorate Blood, move Qi, expel Wind, stop pain","contraindications":"Bleeding disorders, Yin deficiency heat, pregnancy"},
-    {"id":52,"chinese":"益母草","pinyin":"Yì Mǔ Cǎo","english":"Motherwort",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["women","menstrual","blood_stasis","uterus"],
-     "tcm_functions":"Invigorate Blood, dispel stasis, regulate menstruation, reduce edema","contraindications":"Pregnancy, Blood deficiency without stasis"},
-    # ── GUT HEALTH / SPLEEN ──────────────────────────────────────────────────
-    {"id":53,"chinese":"法半夏","pinyin":"Fǎ Bàn Xià","english":"Processed Pinellia",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["gut","phlegm","nausea","stomach","damp"],
-     "tcm_functions":"Dry Damp, resolve Phlegm, descend Rebellious Qi, stop vomiting","contraindications":"Pregnancy; Yin deficiency dry cough"},
-    {"id":54,"chinese":"陈皮","pinyin":"Chén Pí","english":"Aged Tangerine Peel",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["gut","phlegm","qi_stagnation","spleen","nausea"],
-     "tcm_functions":"Move Qi, dry Damp, resolve Phlegm, harmonize Spleen-Stomach","contraindications":"Qi or Yin deficiency without stagnation"},
-    {"id":55,"chinese":"木香","pinyin":"Mù Xiāng","english":"Costus Root",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["gut","qi_stagnation","pain","spleen","liver"],
-     "tcm_functions":"Move Qi, stop pain, strengthen Spleen, prevent Damp stagnation","contraindications":"Yin deficiency with Heat"},
-    {"id":56,"chinese":"砂仁","pinyin":"Shā Rén","english":"Cardamom Fruit",
-     "extract_ratio":"3:1","raw_per_g":3,"raw_per_bag":45,
-     "categories":["gut","spleen","damp","nausea","qi_stagnation"],
-     "tcm_functions":"Transform Damp, move Qi, warm Spleen, stop vomiting","contraindications":"Yin deficiency heat, Fire patterns"},
-    {"id":57,"chinese":"薏苡仁","pinyin":"Yì Yǐ Rén","english":"Job's Tears Seed",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["gut","damp","spleen","joint","heat"],
-     "tcm_functions":"Strengthen Spleen, resolve Damp, clear Heat, expel Bi syndrome","contraindications":"Pregnancy"},
-    {"id":58,"chinese":"扁豆","pinyin":"Biǎn Dòu","english":"Hyacinth Bean",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["gut","spleen","damp","summer_heat"],
-     "tcm_functions":"Strengthen Spleen, resolve Damp, clear Summer Heat","contraindications":"Malaria, Cold-Damp without deficiency"},
-    {"id":59,"chinese":"莲子","pinyin":"Lián Zǐ","english":"Lotus Seed",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["gut","spleen","kidney","shen","sleep"],
-     "tcm_functions":"Tonify Spleen and Kidney, calm Shen, astringe Jing","contraindications":"Dry stool constipation, abdominal distension"},
-    {"id":60,"chinese":"芡实","pinyin":"Qiàn Shí","english":"Gordon Euryale Seed",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["gut","kidney","spleen","damp","jing"],
-     "tcm_functions":"Tonify Spleen and Kidney, resolve Damp, astringe Jing","contraindications":"Food stagnation, constipation"},
-    # ── LIVER / AGING / BRAIN ────────────────────────────────────────────────
-    {"id":61,"chinese":"天麻","pinyin":"Tiān Má","english":"Gastrodia Rhizome",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["liver","wind","head","dizziness","aging","brain"],
-     "tcm_functions":"Calm Liver Wind, stop tremors, relieve headache and dizziness","contraindications":"Blood deficiency without Wind"},
-    {"id":62,"chinese":"钩藤","pinyin":"Gōu Téng","english":"Gambir Vine Stem",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["liver","wind","head","blood_pressure","aging"],
-     "tcm_functions":"Clear Liver Heat, calm Wind, lower blood pressure","contraindications":"No prolonged boiling — add at end of decoction"},
-    {"id":63,"chinese":"石决明","pinyin":"Shí Jué Míng","english":"Abalone Shell",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["liver","wind","eyes","blood_pressure","aging"],
-     "tcm_functions":"Calm Liver Yang, clear Liver Fire, improve vision","contraindications":"Spleen deficiency Cold"},
-    {"id":64,"chinese":"丹参","pinyin":"Dān Shēn","english":"Salvia Root",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["blood_stasis","heart","sleep","liver","aging","menstrual"],
-     "tcm_functions":"Invigorate Blood, dispel stasis, calm Shen, cool Blood","contraindications":"Anticoagulants; pregnancy"},
-    {"id":65,"chinese":"川牛膝","pinyin":"Chuān Niú Xī","english":"Cyathula Root",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["blood_stasis","liver","kidney","joint","aging","blood_pressure"],
-     "tcm_functions":"Invigorate Blood, guide Blood downward, strengthen sinews","contraindications":"Pregnancy, menorrhagia"},
-    # ── HEAT CLEARING ────────────────────────────────────────────────────────
-    {"id":66,"chinese":"黄连","pinyin":"Huáng Lián","english":"Coptis Rhizome",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["heat","gut","heart","infection","damp_heat"],
-     "tcm_functions":"Clear Heart and Stomach Fire, dry Damp, resolve toxins","contraindications":"Cold deficiency patterns; long-term use cautious"},
-    {"id":67,"chinese":"黄芩","pinyin":"Huáng Qín","english":"Scutellaria Root (Skullcap)",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["heat","lung","damp_heat","liver","infection"],
-     "tcm_functions":"Clear Heat, dry Damp, cool Blood, calm fetus","contraindications":"Spleen-Stomach deficiency cold"},
-    {"id":68,"chinese":"茵陈","pinyin":"Yīn Chén","english":"Virgate Wormwood",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["damp_heat","liver","gallbladder","gut"],
-     "tcm_functions":"Clear Damp-Heat, promote bile, treat jaundice","contraindications":"Blood deficiency without Damp-Heat"},
-    # ── ENERGY / ADAPTOGEN ───────────────────────────────────────────────────
-    {"id":69,"chinese":"西洋参","pinyin":"Xī Yáng Shēn","english":"American Ginseng",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["qi_tonic","yin_tonic","lung","heart","aging","fatigue","stress"],
-     "tcm_functions":"Tonify Qi, nourish Yin, clear Heat, generate fluids","contraindications":"Cold-Damp Spleen; avoid with tea and coffee"},
-    {"id":70,"chinese":"红景天","pinyin":"Hóng Jǐng Tiān","english":"Rhodiola",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["qi_tonic","fatigue","stress","aging","heart","lung","brain"],
-     "tcm_functions":"Tonify Qi, invigorate Blood, calm Shen, strengthen Lung","contraindications":"Bipolar disorder (with caution)"},
-    {"id":71,"chinese":"灵芝","pinyin":"Líng Zhī","english":"Reishi Mushroom",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["qi_tonic","immune","sleep","shen","aging","stress"],
-     "tcm_functions":"Calm Shen, tonify Qi and Blood, strengthen Heart and Lung","contraindications":"Anticoagulants (caution)"},
-    {"id":72,"chinese":"五味子","pinyin":"Wǔ Wèi Zǐ","english":"Schisandra Berry",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["qi_tonic","kidney","lung","liver","sleep","stress","aging"],
-     "tcm_functions":"Astringe Lung and Kidney, calm Shen, generate fluids, stop sweating","contraindications":"Exterior patterns, interior excess Heat"},
-    # ── PHLEGM / NODULE RESOLVERS ────────────────────────────────────────────
-    {"id":73,"chinese":"皂角刺","pinyin":"Zào Jiǎo Cì","english":"Gleditsia Spine",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["thyroid","nodule","phlegm","lymph"],
-     "tcm_functions":"Resolve toxins, dissipate nodules, promote pus discharge","contraindications":"Pregnancy, no active suppuration"},
-    {"id":74,"chinese":"橘核","pinyin":"Jú Hé","english":"Tangerine Seed",
-     "extract_ratio":"3:1","raw_per_g":3,"raw_per_bag":45,
-     "categories":["thyroid","nodule","liver","qi_stagnation","pain"],
-     "tcm_functions":"Move Qi, disperse clumping, stop pain","contraindications":"None significant"},
-    {"id":75,"chinese":"昆布","pinyin":"Kūn Bù","english":"Kelp",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["thyroid","nodule","phlegm","iodine"],
-     "tcm_functions":"Soften hardness, resolve Phlegm, dissipate goiter","contraindications":"Hyperthyroidism; iodine-sensitive patients"},
-    # ── IMMUNE / LUNG ────────────────────────────────────────────────────────
-    {"id":76,"chinese":"防风","pinyin":"Fáng Fēng","english":"Siler Root",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["immune","wind","joint","head","spleen"],
-     "tcm_functions":"Expel Wind, stop pain, overcome Damp, relieve diarrhea","contraindications":"Yin deficiency or Blood deficiency with Wind"},
-    {"id":77,"chinese":"连翘","pinyin":"Lián Qiào","english":"Forsythia Fruit",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["immune","heat","infection","lymph","thyroid"],
-     "tcm_functions":"Clear Heat, resolve toxins, dissipate nodules, dispel Wind-Heat","contraindications":"Spleen-Stomach deficiency cold"},
-    {"id":78,"chinese":"金银花","pinyin":"Jīn Yín Huā","english":"Honeysuckle Flower",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["immune","heat","infection","skin"],
-     "tcm_functions":"Clear Heat, resolve Fire toxins, expel Wind-Heat","contraindications":"Cold deficiency patterns"},
-    # ── ADDITIONAL HERBS ─────────────────────────────────────────────────────
-    {"id":79,"chinese":"赤芍","pinyin":"Chì Sháo","english":"Red Peony Root",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["blood_stasis","heat","liver","pain","menstrual"],
-     "tcm_functions":"Invigorate Blood, dispel stasis, clear Heat, stop pain","contraindications":"Pregnancy, bleeding disorders"},
-    {"id":80,"chinese":"桃仁","pinyin":"Táo Rén","english":"Peach Kernel",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["blood_stasis","women","menstrual","constipation","lung"],
-     "tcm_functions":"Break Blood stasis, moisten intestines","contraindications":"Pregnancy, bleeding disorders"},
-    {"id":81,"chinese":"红花","pinyin":"Hóng Huā","english":"Safflower",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["blood_stasis","women","menstrual","heart","pain"],
-     "tcm_functions":"Invigorate Blood, dispel stasis, relieve pain","contraindications":"Pregnancy, bleeding disorders"},
-    {"id":82,"chinese":"泽泻","pinyin":"Zé Xiè","english":"Water Plantain",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["kidney","damp","dizziness","gut","damp_heat"],
-     "tcm_functions":"Leach out Damp, clear Heat in Kidney and Bladder","contraindications":"Kidney Yin or Yang deficiency without Damp"},
-    {"id":83,"chinese":"牡丹皮","pinyin":"Mǔ Dān Pí","english":"Moutan Bark",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["blood_cooling","women","heat","liver","blood_stasis"],
-     "tcm_functions":"Clear Heat, cool Blood, invigorate Blood, clear Liver Fire","contraindications":"Pregnancy, excessive menstruation"},
-    {"id":84,"chinese":"鸡血藤","pinyin":"Jī Xuè Téng","english":"Spatholobus Stem",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["blood_tonic","women","menstrual","joint","blood_stasis"],
-     "tcm_functions":"Invigorate and nourish Blood, relax sinews","contraindications":"None significant"},
-    {"id":85,"chinese":"石菖蒲","pinyin":"Shí Chāng Pú","english":"Acorus Rhizome",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["phlegm","brain","heart","memory","sleep"],
-     "tcm_functions":"Open orifices, resolve Phlegm, calm Shen, sharpen consciousness","contraindications":"Yin deficiency; slippery semen"},
-    {"id":86,"chinese":"天王补心丹(拆方)制远志","pinyin":"Zhì Yuǎn Zhì","english":"Processed Polygala",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["sleep","heart","memory","brain","anxiety"],
-     "tcm_functions":"Benefit Heart-Kidney communication, calm Shen, resolve Phlegm","contraindications":"Gastric ulcer"},
-    {"id":87,"chinese":"竹茹","pinyin":"Zhú Rú","english":"Bamboo Shavings",
-     "extract_ratio":"3:1","raw_per_g":3,"raw_per_bag":45,
-     "categories":["phlegm","heat","nausea","sleep","anxiety"],
-     "tcm_functions":"Clear Heat, resolve Phlegm, calm Shen, stop vomiting","contraindications":"Cold-Damp Spleen"},
-    {"id":88,"chinese":"浙贝母","pinyin":"Zhè Bèi Mǔ","english":"Fritillaria Bulb (Zhe)",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["phlegm","thyroid","nodule","cough","heat"],
-     "tcm_functions":"Clear Heat, resolve Phlegm, soften hardness, dissipate nodules","contraindications":"Cold-Damp Phlegm"},
-    {"id":89,"chinese":"淫羊藿","pinyin":"Yín Yáng Huò","english":"Epimedium Leaf",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["yang_tonic","kidney","men","bone","aging","immune"],
-     "tcm_functions":"Tonify Kidney Yang, strengthen bones, dispel Wind-Cold-Damp","contraindications":"Yin deficiency with Heat"},
-    {"id":90,"chinese":"覆盆子","pinyin":"Fù Pén Zǐ","english":"Chinese Raspberry",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["kidney","jing","men","eyes","yang_tonic"],
-     "tcm_functions":"Tonify Kidney Yang, astringe Jing, brighten eyes","contraindications":"Damp-Heat, difficult urination"},
-    {"id":91,"chinese":"续断","pinyin":"Xù Duàn","english":"Teasel Root",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["yang_tonic","kidney","bone","joint","women","aging"],
-     "tcm_functions":"Tonify Kidney and Liver, strengthen bones and sinews, stop bleeding","contraindications":"Liver excess fire patterns"},
-    {"id":92,"chinese":"杜仲","pinyin":"Dù Zhòng","english":"Eucommia Bark",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["yang_tonic","kidney","bone","blood_pressure","aging","back"],
-     "tcm_functions":"Tonify Kidney and Liver Yang, strengthen bones and sinews, calm fetus","contraindications":"Yin deficiency with Heat"},
-    {"id":93,"chinese":"桑椹","pinyin":"Sāng Shèn","english":"Mulberry Fruit",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["blood_tonic","kidney","liver","yin_tonic","hair","aging"],
-     "tcm_functions":"Nourish Blood and Yin, tonify Kidney and Liver, promote fluid generation","contraindications":"Spleen deficiency diarrhea"},
-    {"id":94,"chinese":"桑寄生","pinyin":"Sāng Jì Shēng","english":"Loranthus (Mulberry Mistletoe)",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["kidney","liver","bone","joint","women","blood_pressure"],
-     "tcm_functions":"Tonify Liver and Kidney, strengthen sinews and bones, calm fetus, lower BP","contraindications":"None significant"},
-    {"id":95,"chinese":"珍珠母","pinyin":"Zhēn Zhū Mǔ","english":"Mother of Pearl",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["liver","sleep","anxiety","eyes","liver_yang"],
-     "tcm_functions":"Calm Liver Yang, clear Heat, calm Shen, improve vision","contraindications":"Spleen deficiency cold"},
-    {"id":96,"chinese":"磁石","pinyin":"Cí Shí","english":"Magnetite",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["kidney","liver","sleep","anxiety","ears","dizziness"],
-     "tcm_functions":"Anchor Kidney, calm Shen, benefit ears and eyes","contraindications":"Spleen-Stomach weakness"},
-    {"id":97,"chinese":"酸枣仁","pinyin":"Suān Zǎo Rén","english":"Ziziphus Seed (Raw)",
-     "extract_ratio":"5:1","raw_per_g":5,"raw_per_bag":75,
-     "categories":["sleep","heart","liver","anxiety","shen"],
-     "tcm_functions":"Nourish Heart Yin, calm Shen (raw — sedating effect differs from roasted)","contraindications":"None significant"},
-    {"id":98,"chinese":"桂枝","pinyin":"Guì Zhī","english":"Cinnamon Twig",
-     "extract_ratio":"3:1","raw_per_g":3,"raw_per_bag":45,
-     "categories":["yang_tonic","heart","cold","blood_stasis","menstrual"],
-     "tcm_functions":"Warm Yang, unblock vessels, harmonize Ying and Wei","contraindications":"Yin deficiency heat, pregnancy (large doses), bleeding disorders"},
-    {"id":99,"chinese":"太子参","pinyin":"Tài Zǐ Shēn","english":"Pseudostellaria Root",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["qi_tonic","yin_tonic","spleen","lung","fatigue","children"],
-     "tcm_functions":"Gently tonify Spleen Qi and Lung Yin, generate fluids","contraindications":"None significant — very safe"},
-    {"id":100,"chinese":"北沙参","pinyin":"Běi Shā Shēn","english":"Glehnia Root",
-     "extract_ratio":"4:1","raw_per_g":4,"raw_per_bag":60,
-     "categories":["yin_tonic","lung","stomach","heat","aging"],
-     "tcm_functions":"Nourish Lung and Stomach Yin, clear Heat, generate fluids","contraindications":"Cold-Damp patterns"},
-]
+import csv
+from functools import lru_cache
+from pathlib import Path
+
+CSV_PATH = Path(__file__).parent / "herbs.csv"
+
+
+@lru_cache(maxsize=1)
+def _load() -> list:
+    herbs = []
+    with CSV_PATH.open(encoding="utf-8-sig", newline="") as f:
+        for row in csv.DictReader(f):
+            herbs.append({
+                "id": int(row["id"]),
+                "chinese": row["chinese"],
+                "pinyin": row["pinyin"],
+                "english": row["english"],
+                "base_herb": row["base_herb"],
+                "processing": row["processing"],
+                "botanical_source": row["botanical_source"],
+                "net_content_g": float(row["net_content_g"]),
+                "extract_ratio": row["extract_ratio"],
+                "raw_per_g": float(row["raw_per_g"]),
+                "raw_per_bag": float(row["raw_per_bag"]),
+                "categories": [c for c in row["categories"].split("|") if c],
+                "tcm_functions": row["tcm_functions"],
+                "contraindications": row["contraindications"],
+                "data_source": row["data_source"],
+            })
+    if not herbs:
+        raise RuntimeError(f"No herbs loaded from {CSV_PATH}")
+    return herbs
+
+
+HERBS = _load()
+
 
 # ── Category keyword mapping ───────────────────────────────────────────────────
 
@@ -455,7 +87,6 @@ CONDITION_CATEGORY_MAP = {
     "blood_pressure": ["blood_pressure", "liver", "liver_yang", "wind"],
     "heart": ["heart", "shen", "blood_tonic", "qi_tonic"],
 }
-
 
 def get_all_herbs():
     return HERBS
@@ -497,8 +128,50 @@ def format_herb_list_for_prompt(herbs: list) -> str:
     return "\n".join(lines)
 
 
+# Names a practitioner may use that differ from the product-list name.
+# Left side: common or classical synonym. Right side: the stocked base herb.
+ALIASES = {
+    "山茱萸": "山萸肉",     # Cornus — stocked as the deseeded flesh
+    "旱莲草": "墨旱莲",     # Eclipta
+    "仙灵脾": "淫羊藿",     # Epimedium
+    "元胡": "延胡索",
+    "生地": "生地黄",
+    "苡仁": "薏苡仁",
+    "云苓": "茯苓",
+    "潞党参": "党参",
+    "杭白芍": "白芍",
+    "怀牛膝": "牛膝",
+    "川牛膝": "牛膝",
+    "北沙参": "南沙参",     # only the southern species is stocked
+}
+
+# Herbs a practitioner may ask for that Chemigran does NOT stock. Named
+# explicitly so the caller gets None rather than a silent near-match.
+NOT_STOCKED = {"昆布", "鹿茸", "海藻"}
+
+
 def get_herb_by_chinese(chinese_name: str):
+    """
+    Resolve a herb name to a stocked product.
+
+    Order: exact product name, alias, base-herb name, then a contains match.
+    Returns None for herbs known not to be stocked, so the formulator cannot
+    quietly substitute something similar.
+    """
+    name = (chinese_name or "").strip()
+    if not name or name in NOT_STOCKED:
+        return None
+
     for h in HERBS:
-        if h["chinese"] == chinese_name:
+        if h["chinese"] == name:
+            return h
+
+    name = ALIASES.get(name, name)
+
+    for h in HERBS:
+        if h["chinese"] == name or h["base_herb"] == name:
+            return h
+    for h in HERBS:
+        if name in h["chinese"]:
             return h
     return None
