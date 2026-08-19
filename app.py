@@ -17,9 +17,26 @@ from vision_engine import analyze_tcm_visual, analyze_with_yolo_pipeline, enrich
 from vitals_engine import assess_vitals
 
 # ── Page config ───────────────────────────────────────────────────────────────
+# ── Branding assets ───────────────────────────────────────────────────────────
+# Drop the company logo at assets/logo.png (or .jpg / .webp / .svg) and it is
+# used for the browser tab icon and the sidebar header. Falls back to the leaf
+# emoji if absent, so a missing file never breaks the app.
+from pathlib import Path as _P
+
+_ASSETS = _P(__file__).parent / "assets"
+LOGO_PATH = next(
+    (p for ext in ("png", "webp", "jpg", "jpeg", "svg")
+     for p in [_ASSETS / f"logo.{ext}"] if p.exists()),
+    None,
+)
+FAVICON_PATH = next(
+    (p for ext in ("png", "ico", "jpg") for p in [_ASSETS / f"favicon.{ext}"] if p.exists()),
+    None,
+)
+
 st.set_page_config(
     page_title=APP_TITLE,
-    page_icon="🌿",
+    page_icon=str(FAVICON_PATH or LOGO_PATH) if (FAVICON_PATH or LOGO_PATH) else "🌿",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -153,7 +170,11 @@ st.markdown("""
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown(f"## 🌿 {COMPANY}")
+    if LOGO_PATH:
+        st.image(str(LOGO_PATH), use_container_width=True)
+    else:
+        st.markdown(f"## 🌿 {COMPANY}")
+        st.caption("Add assets/logo.png to replace this with your logo")
     st.markdown(f"**{APP_TITLE}**  \n*v{VERSION}*")
     st.divider()
 
