@@ -112,6 +112,37 @@ st.markdown("""
      real selector is confirmed by inspecting the page, rather than guessing.
      The <header> itself must stay untouched: the sidebar toggle is its child. */
 
+  /* Main-area form controls.
+     Without these, textareas inherit .stApp's light text colour while keeping a
+     light background — grey-on-white, which reads as empty placeholder text.
+     Single-line inputs escape it because BaseWeb sets their colour explicitly,
+     so the bug only showed on multi-line fields. */
+  .stTextInput input,
+  .stTextArea textarea,
+  .stNumberInput input,
+  .stDateInput input {
+    background: #0d1e30 !important;
+    color: #e2e8f0 !important;
+    border: 1px solid #1e3a4f !important;
+    font-size: 16px !important;          /* 16px stops iOS zooming on focus */
+  }
+  .stTextInput input::placeholder,
+  .stTextArea textarea::placeholder {
+    color: #64748b !important;
+    opacity: 1;
+  }
+  .stTextInput input:focus,
+  .stTextArea textarea:focus,
+  .stNumberInput input:focus {
+    border-color: #2563eb !important;
+    box-shadow: 0 0 0 1px #2563eb55 !important;
+  }
+  [data-baseweb="select"] > div {
+    background: #0d1e30 !important;
+    border-color: #1e3a4f !important;
+  }
+  [data-baseweb="select"] * { color: #e2e8f0 !important; }
+
   /* Sidebar API key input — wider touch target on mobile */
   [data-testid="stSidebar"] input {
     font-size: 16px !important;
@@ -1268,6 +1299,21 @@ with tab_formulation:
         default_condition = st.session_state.get("vision_condition", "") if vision_prefill else ""
         default_pattern = st.session_state.get("vision_pattern", "") if vision_prefill else ""
         default_demo = st.session_state.get("vision_demographic", "") if vision_prefill else ""
+
+        # Show what was carried over as readable text. Relying on the user to
+        # scroll inside a 100px textarea to confirm the diagnosis arrived is a
+        # poor way to build confidence in the handoff, especially on a phone.
+        if vision_prefill and default_condition:
+            with st.expander("🔬 Diagnosis carried over from the scan", expanded=True):
+                st.markdown(f"**Condition**  \n{default_condition}")
+                if default_pattern:
+                    st.markdown(f"**TCM pattern**  \n{default_pattern}")
+                if default_demo:
+                    st.markdown(f"**Demographic**  \n{default_demo}")
+                st.caption(
+                    "These are pre-filled in the fields below and are editable. "
+                    "The full visual assessment is also sent to the formulator."
+                )
 
         condition = st.text_area(
             "Health Condition / Symptoms *",
